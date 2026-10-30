@@ -1,0 +1,6 @@
+{
+  "name": "OPERIO - Gestión de Partes de Trabajo",
+  "description": "Aplicación web profesional para el control integral de partes de trabajo, departamentos, estados y notificaciones por rol.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

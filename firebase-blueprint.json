@@ -1,0 +1,122 @@
+{
+  "entities": {
+    "Company": {
+      "title": "Company",
+      "description": "Empresa registrada en OPERIO con su código único",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "code", "name", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Usuario registrado (administrador, operario, solo lectura)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "accessKey": { "type": "string" },
+        "role": { "type": "string", "enum": ["administrador", "operario", "solo_lectura"] },
+        "departmentIds": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "companyId", "name", "accessKey", "role", "createdAt"]
+    },
+    "Department": {
+      "title": "Department",
+      "description": "Departamento técnico de la empresa",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyId": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["id", "companyId", "name"]
+    },
+    "JobStatus": {
+      "title": "JobStatus",
+      "description": "Estado de orden de trabajo",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyId": { "type": "string" },
+        "name": { "type": "string" },
+        "isCompleted": { "type": "boolean" },
+        "color": { "type": "string" }
+      },
+      "required": ["id", "companyId", "name"]
+    },
+    "WorkOrder": {
+      "title": "WorkOrder",
+      "description": "Orden de trabajo (OT) con seguimiento en tiempo real",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyId": { "type": "string" },
+        "ot": { "type": "string" },
+        "client": { "type": "string" },
+        "deliveryDate": { "type": "string" },
+        "assignedOperatorId": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "statusId": { "type": "string" },
+        "isUrgent": { "type": "boolean" },
+        "alerts": { "type": "array" },
+        "notes": { "type": "string" },
+        "pdfAttachment": { "type": "object" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "companyId", "ot", "client", "departmentId", "statusId", "isUrgent", "createdAt", "updatedAt"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "Notificación de cambio de estado, alerta o asignación",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyId": { "type": "string" },
+        "userId": { "type": "string" },
+        "workOrderId": { "type": "string" },
+        "ot": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "companyId", "userId", "title", "message", "type", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/companies/{companyId}": {
+      "schema": "#/entities/Company",
+      "description": "Empresas registradas"
+    },
+    "/users/{userId}": {
+      "schema": "#/entities/User",
+      "description": "Usuarios y operarios de las empresas"
+    },
+    "/departments/{departmentId}": {
+      "schema": "#/entities/Department",
+      "description": "Departamentos técnicos"
+    },
+    "/statuses/{statusId}": {
+      "schema": "#/entities/JobStatus",
+      "description": "Estados de los trabajos"
+    },
+    "/workOrders/{workOrderId}": {
+      "schema": "#/entities/WorkOrder",
+      "description": "Órdenes de trabajo"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "#/entities/AppNotification",
+      "description": "Notificaciones del sistema"
+    }
+  }
+}
