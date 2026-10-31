@@ -89,9 +89,8 @@ export const JobModal: React.FC<JobModalProps> = ({
       setAlerts(job.alerts || []);
       setAttachedPdf(job.pdfAttachment || null);
     } else {
-      // New job defaults (can be manually edited or auto-filled via uploaded PDF)
-      const nextOtNum = String(Math.floor(Math.random() * 900) + 100);
-      setOt(`OT-2026-${nextOtNum}`);
+      // New job defaults: OT starts empty so the user can enter their own work order number directly
+      setOt('');
       setClient('');
       setDeliveryDate('');
       const defaultOp = users.find((u) => u.role === 'operario')?.id || '';
