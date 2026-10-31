@@ -56,11 +56,6 @@ export const Logo: React.FC<LogoProps> = ({
               '/assets/aistudio/1793304075553_ea6c7137.jpg';
           }}
         />
-        {size === 'lg' && (
-          <span className="hidden sm:inline-block text-[10px] uppercase font-bold tracking-widest text-sky-700 px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 self-center">
-            PRO
-          </span>
-        )}
       </div>
 
       {showSubtitle && (

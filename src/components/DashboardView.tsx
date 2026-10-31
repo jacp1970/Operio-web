@@ -113,9 +113,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <Users className="w-3.5 h-3.5 text-slate-400" />
               {assignedOp ? assignedOp.name : 'Sin asignar'}
             </span>
+            <span className="inline-flex items-center gap-1 text-slate-600 font-medium">
+              <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+              Entrada: {new Date(job.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+            </span>
             {job.deliveryDate && (
               <span className="inline-flex items-center gap-1 text-slate-600 font-medium">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                <Clock className="w-3.5 h-3.5 text-amber-500" />
                 Entrega: {job.deliveryDate}
               </span>
             )}

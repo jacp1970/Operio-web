@@ -185,8 +185,14 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* Notifications Dropdown */}
               {notificationsOpen && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200/90 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                  <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+                <>
+                  {/* Backdrop on mobile to tap outside easily */}
+                  <div
+                    className="fixed inset-0 z-40 sm:hidden bg-slate-900/20 backdrop-blur-2xs"
+                    onClick={() => setNotificationsOpen(false)}
+                  />
+                  <div className="fixed left-3 right-3 top-16 sm:absolute sm:inset-x-auto sm:left-auto sm:right-0 sm:top-full sm:mt-2 w-auto sm:w-96 max-w-md sm:max-w-none mx-auto sm:mx-0 bg-white rounded-2xl shadow-2xl border border-slate-200/90 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-slate-800">
                         Notificaciones
@@ -276,6 +282,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
                   </div>
                 </div>
+              </>
               )}
             </div>
           )}

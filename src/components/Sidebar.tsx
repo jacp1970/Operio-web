@@ -239,7 +239,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
 
       {/* Footer Info */}
       <div className="p-4 border-t border-slate-200/60 text-[11px] text-slate-400 flex items-center justify-between">
-        <span>OPERIO v2.4</span>
+        <span>OPERIO v1.0</span>
         <span className="flex items-center gap-1 text-emerald-600 font-medium">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
           Sistema Operativo

@@ -10,10 +10,15 @@ import {
   Calendar,
   Building,
   User,
-  CheckCircle2,
+  Clock,
   Filter,
   Download,
   ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
+  SlidersHorizontal,
+  RotateCcw,
+  Check,
 } from 'lucide-react';
 
 interface JobsViewProps {
@@ -36,6 +41,8 @@ export const JobsView: React.FC<JobsViewProps> = ({
     getDepartmentName,
     getStatus,
     getUser,
+    reorderWorkOrder,
+    resetWorkOrdersOrderToDate,
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,9 +53,32 @@ export const JobsView: React.FC<JobsViewProps> = ({
   const [onlyAlerts, setOnlyAlerts] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
+  // Sorting: by default ordered by date ('date'); operator can reposition ('operator_order')
+  const [sortCriteria, setSortCriteria] = useState<'date' | 'operator_order'>('date');
+  const [dateDirection, setDateDirection] = useState<'desc' | 'asc'>('desc');
+  const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
+
   if (!currentUser) return null;
 
   const isAdmin = currentUser.role === 'administrador';
+  const isOperario = currentUser.role === 'operario';
+  const canReorder = isAdmin || isOperario;
+
+  // Format date helper
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return '-';
+    try {
+      const d = new Date(dateString);
+      if (isNaN(d.getTime())) return dateString.slice(0, 10);
+      return d.toLocaleDateString('es-ES', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
+    } catch {
+      return dateString.slice(0, 10);
+    }
+  };
 
   // Filter logic
   const filteredJobs = workOrders.filter((wo) => {
@@ -98,6 +128,46 @@ export const JobsView: React.FC<JobsViewProps> = ({
     return true;
   });
 
+  // Sorting logic
+  // Default: by createdAt date
+  // Custom: by operator's repositioned orderPosition
+  const sortedJobs = [...filteredJobs].sort((a, b) => {
+    if (sortCriteria === 'date') {
+      const timeA = new Date(a.createdAt || 0).getTime();
+      const timeB = new Date(b.createdAt || 0).getTime();
+      return dateDirection === 'desc' ? timeB - timeA : timeA - timeB;
+    } else {
+      const posA = a.orderPosition !== undefined ? a.orderPosition : 999999;
+      const posB = b.orderPosition !== undefined ? b.orderPosition : 999999;
+      if (posA !== posB) return posA - posB;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    }
+  });
+
+  const handleReorder = (jobId: string, direction: 'up' | 'down') => {
+    if (!canReorder) return;
+    if (sortCriteria !== 'operator_order') {
+      setSortCriteria('operator_order');
+    }
+    const res = reorderWorkOrder(jobId, direction);
+    if (res.success) {
+      setFeedbackNotice(
+        direction === 'up'
+          ? 'Prioridad del trabajo aumentada (orden de operario actualizado)'
+          : 'Posición del trabajo reducida (orden de operario actualizado)'
+      );
+      setTimeout(() => setFeedbackNotice(null), 3000);
+    }
+  };
+
+  const handleResetToDate = () => {
+    resetWorkOrdersOrderToDate();
+    setSortCriteria('date');
+    setDateDirection('desc');
+    setFeedbackNotice('Trabajos restablecidos al orden por fecha de creación.');
+    setTimeout(() => setFeedbackNotice(null), 3000);
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Header & Action */}
@@ -107,7 +177,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
             Órdenes de Trabajo (OT)
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Mostrando {filteredJobs.length} de {workOrders.length} partes de trabajo registrados
+            Mostrando {sortedJobs.length} de {workOrders.length} partes de trabajo registrados
           </p>
         </div>
 
@@ -140,11 +210,94 @@ export const JobsView: React.FC<JobsViewProps> = ({
           {isAdmin && (
             <button
               onClick={onOpenNewJobModal}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs sm:text-sm font-bold hover:bg-indigo-700 active:scale-95 shadow-sm transition-all"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs sm:text-sm font-bold hover:bg-indigo-700 active:scale-95 shadow-sm transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Añadir Trabajo</span>
             </button>
+          )}
+        </div>
+      </div>
+
+      {/* Reorder feedback notice */}
+      {feedbackNotice && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-between animate-in fade-in">
+          <span>{feedbackNotice}</span>
+          <button
+            onClick={() => setFeedbackNotice(null)}
+            className="text-emerald-600 hover:text-emerald-800 ml-2"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
+      {/* ORDER BAR: Default Date Sort vs Operator Custom Reorder */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mr-1">
+            <ArrowUpDown className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Ordenación:</span>
+          </span>
+
+          <div className="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setSortCriteria('date')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                sortCriteria === 'date'
+                  ? 'bg-white text-indigo-700 shadow-2xs border border-indigo-100'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Por Fecha de Entrada (Por defecto)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSortCriteria('operator_order')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                sortCriteria === 'operator_order'
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Criterio del Operario</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 self-start md:self-auto">
+          {sortCriteria === 'date' ? (
+            <button
+              type="button"
+              onClick={() => setDateDirection(dateDirection === 'desc' ? 'asc' : 'desc')}
+              className="text-xs font-medium text-slate-700 hover:text-indigo-600 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <ArrowUpDown className="w-3 h-3 text-slate-400" />
+              <span>
+                {dateDirection === 'desc'
+                  ? 'Más recientes primero (Descendente)'
+                  : 'Más antiguas primero (Ascendente)'}
+              </span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-500 font-medium hidden lg:inline">
+                Usa las flechas ↑ y ↓ en cada orden para ajustar la prioridad en el taller
+              </span>
+              <button
+                type="button"
+                onClick={handleResetToDate}
+                title="Restablecer al orden por fecha"
+                className="text-xs font-semibold text-slate-600 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 px-3 py-1.5 rounded-xl border border-slate-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Restablecer a fecha</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -215,7 +368,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
           <button
             type="button"
             onClick={() => setOnlyUrgent(!onlyUrgent)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
               onlyUrgent
                 ? 'bg-rose-50 border-rose-300 text-rose-700 font-bold'
                 : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
@@ -229,7 +382,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
           <button
             type="button"
             onClick={() => setOnlyAlerts(!onlyAlerts)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
               onlyAlerts
                 ? 'bg-amber-50 border-amber-300 text-amber-800 font-bold'
                 : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
@@ -255,7 +408,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
                 setOnlyUrgent(false);
                 setOnlyAlerts(false);
               }}
-              className="text-xs text-indigo-600 font-semibold hover:underline ml-auto"
+              className="text-xs text-indigo-600 font-semibold hover:underline ml-auto cursor-pointer"
             >
               Limpiar filtros
             </button>
@@ -264,7 +417,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
       </div>
 
       {/* Empty State */}
-      {filteredJobs.length === 0 ? (
+      {sortedJobs.length === 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center max-w-lg mx-auto">
           <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
             <Search className="w-6 h-6" />
@@ -280,7 +433,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
           {isAdmin && (
             <button
               onClick={onOpenNewJobModal}
-              className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700"
+              className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 cursor-pointer"
             >
               Crear nueva OT
             </button>
@@ -289,7 +442,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
       ) : viewMode === 'grid' ? (
         /* GRID VIEW */
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filteredJobs.map((job) => {
+          {sortedJobs.map((job, index) => {
             const status = getStatus(job.statusId);
             const deptName = getDepartmentName(job.departmentId);
             const assignedOp = getUser(job.assignedOperatorId);
@@ -311,17 +464,51 @@ export const JobsView: React.FC<JobsViewProps> = ({
                           <Flame className="w-3 h-3 text-rose-600" /> Urgente
                         </span>
                       )}
+                      {sortCriteria === 'operator_order' && (
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono text-[11px] font-bold border border-indigo-100">
+                          #{index + 1}
+                        </span>
+                      )}
                     </div>
 
-                    <span
-                      className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                        status?.isCompleted
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                      }`}
-                    >
-                      {status?.name || 'Estado'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                          status?.isCompleted
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                        }`}
+                      >
+                        {status?.name || 'Estado'}
+                      </span>
+
+                      {/* Reposition arrows for operators & admin */}
+                      {canReorder && (
+                        <div
+                          className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            disabled={index === 0}
+                            onClick={() => handleReorder(job.id, 'up')}
+                            title="Subir prioridad (Criterio operario)"
+                            className="p-1 rounded text-slate-600 hover:text-indigo-600 hover:bg-white disabled:opacity-20 cursor-pointer transition-colors"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={index === sortedJobs.length - 1}
+                            onClick={() => handleReorder(job.id, 'down')}
+                            title="Bajar prioridad (Criterio operario)"
+                            className="p-1 rounded text-slate-600 hover:text-indigo-600 hover:bg-white disabled:opacity-20 cursor-pointer transition-colors"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <h3 className="font-bold text-slate-900 text-base mb-1.5 group-hover:text-indigo-600 transition-colors">
@@ -341,12 +528,20 @@ export const JobsView: React.FC<JobsViewProps> = ({
                       </span>
                     </div>
 
-                    {job.deliveryDate && (
-                      <div className="flex items-center gap-1.5 text-slate-600 font-medium">
-                        <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>Entrega: {job.deliveryDate}</span>
+                    {/* DATES: Fecha de Creación / Entrada y Fecha de Entrega */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5">
+                      <div className="flex items-center gap-1 text-slate-600 font-medium">
+                        <Calendar className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                        <span>Entrada: {formatDate(job.createdAt)}</span>
                       </div>
-                    )}
+
+                      {job.deliveryDate && (
+                        <div className="flex items-center gap-1 text-slate-600 font-medium">
+                          <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span>Entrega: {formatDate(job.deliveryDate)}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Notes snippet */}
@@ -398,19 +593,21 @@ export const JobsView: React.FC<JobsViewProps> = ({
             <table className="w-full text-left text-xs sm:text-sm">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[11px] tracking-wider">
                 <tr>
+                  {canReorder && <th className="px-3 py-3 text-center">Prioridad</th>}
                   <th className="px-4 py-3">OT</th>
                   <th className="px-4 py-3">Cliente</th>
+                  <th className="px-4 py-3">Fecha Entrada</th>
+                  <th className="px-4 py-3">Entrega</th>
                   <th className="px-4 py-3">Departamento</th>
                   <th className="px-4 py-3">Operario</th>
                   <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3">Entrega</th>
                   <th className="px-4 py-3">Alertas</th>
                   <th className="px-4 py-3">PDF</th>
                   <th className="px-4 py-3 text-right">Acción</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredJobs.map((job) => {
+                {sortedJobs.map((job, index) => {
                   const status = getStatus(job.statusId);
                   const deptName = getDepartmentName(job.departmentId);
                   const assignedOp = getUser(job.assignedOperatorId);
@@ -421,6 +618,38 @@ export const JobsView: React.FC<JobsViewProps> = ({
                       onClick={() => onOpenJobDetail(job)}
                       className="hover:bg-slate-50/80 cursor-pointer transition-colors"
                     >
+                      {/* Reposition controls */}
+                      {canReorder && (
+                        <td
+                          className="px-3 py-3 text-center whitespace-nowrap"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="inline-flex items-center gap-1 bg-slate-50 px-1 py-0.5 rounded-lg border border-slate-200">
+                            <span className="font-mono text-[10px] font-bold text-slate-500 px-1">
+                              #{index + 1}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={index === 0}
+                              onClick={() => handleReorder(job.id, 'up')}
+                              title="Subir posición"
+                              className="p-0.5 rounded text-slate-600 hover:text-indigo-600 hover:bg-white disabled:opacity-20 cursor-pointer"
+                            >
+                              <ChevronUp className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={index === sortedJobs.length - 1}
+                              onClick={() => handleReorder(job.id, 'down')}
+                              title="Bajar posición"
+                              className="p-0.5 rounded text-slate-600 hover:text-indigo-600 hover:bg-white disabled:opacity-20 cursor-pointer"
+                            >
+                              <ChevronDown className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+
                       <td className="px-4 py-3 font-mono font-bold text-slate-900 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           {job.ot}
@@ -431,13 +660,27 @@ export const JobsView: React.FC<JobsViewProps> = ({
                           )}
                         </div>
                       </td>
+
                       <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">
                         {job.client}
                       </td>
+
+                      {/* Fecha de Entrada */}
+                      <td className="px-4 py-3 font-medium text-slate-600 whitespace-nowrap">
+                        {formatDate(job.createdAt)}
+                      </td>
+
+                      {/* Fecha de Entrega */}
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                        {job.deliveryDate ? formatDate(job.deliveryDate) : '-'}
+                      </td>
+
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{deptName}</td>
+
                       <td className="px-4 py-3 whitespace-nowrap">
                         {assignedOp ? assignedOp.name : <span className="text-slate-400">Sin asignar</span>}
                       </td>
+
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span
                           className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
@@ -449,9 +692,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
                           {status?.name}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
-                        {job.deliveryDate || '-'}
-                      </td>
+
                       <td className="px-4 py-3 whitespace-nowrap">
                         {job.alerts.length > 0 ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 text-xs font-bold">
@@ -461,6 +702,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
                           '-'
                         )}
                       </td>
+
                       <td className="px-4 py-3 whitespace-nowrap">
                         {job.pdfAttachment ? (
                           <span className="text-indigo-600 font-semibold inline-flex items-center gap-1">
@@ -470,13 +712,14 @@ export const JobsView: React.FC<JobsViewProps> = ({
                           <span className="text-slate-400">-</span>
                         )}
                       </td>
+
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             onOpenJobDetail(job);
                           }}
-                          className="px-2.5 py-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors"
+                          className="px-2.5 py-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                         >
                           Abrir
                         </button>

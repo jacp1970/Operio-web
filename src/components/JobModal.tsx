@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { WorkOrder, PdfAttachment } from '../types';
+import { parsePdfClientSide } from '../utils/pdfExtractor';
 import {
   X,
   FileText,
@@ -52,6 +53,7 @@ export const JobModal: React.FC<JobModalProps> = ({
   // Form fields
   const [ot, setOt] = useState('');
   const [client, setClient] = useState('');
+  const [createdAt, setCreatedAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [deliveryDate, setDeliveryDate] = useState('');
   const [assignedOperatorId, setAssignedOperatorId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
@@ -64,22 +66,23 @@ export const JobModal: React.FC<JobModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // PDF Attachment and AI extraction state
+  // PDF Attachment and client-side extraction state
   const [attachedPdf, setAttachedPdf] = useState<PdfAttachment | null>(null);
-  const [isAnalyzingAi, setIsAnalyzingAi] = useState(false);
-  const [aiSuccessNotice, setAiSuccessNotice] = useState<string | null>(null);
+  const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
+  const [pdfSuccessNotice, setPdfSuccessNotice] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Initialize form state
   useEffect(() => {
     setShowDeleteConfirm(false);
-    setIsAnalyzingAi(false);
-    setAiSuccessNotice(null);
+    setIsAnalyzingPdf(false);
+    setPdfSuccessNotice(null);
 
     if (job) {
       setOt(job.ot);
       setClient(job.client);
+      setCreatedAt(job.createdAt ? job.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10));
       setDeliveryDate(job.deliveryDate || '');
       setAssignedOperatorId(job.assignedOperatorId || '');
       setDepartmentId(job.departmentId || '');
@@ -92,6 +95,7 @@ export const JobModal: React.FC<JobModalProps> = ({
       // New job defaults: OT starts empty so the user can enter their own work order number directly
       setOt('');
       setClient('');
+      setCreatedAt(new Date().toISOString().slice(0, 10)); // Generada automáticamente
       setDeliveryDate('');
       const defaultOp = users.find((u) => u.role === 'operario')?.id || '';
       setAssignedOperatorId(defaultOp);
@@ -126,58 +130,65 @@ export const JobModal: React.FC<JobModalProps> = ({
   };
 
   /**
-   * AI Extraction: sends PDF dataUrl to server backend running Gemini to autofill fields
+   * Client-side PDF Extraction: parses PDF text locally in the browser with no API keys or credits
    */
-  const extractDataFromPdfWithAi = async (dataUrl: string, fileName: string) => {
-    setIsAnalyzingAi(true);
-    setAiSuccessNotice(null);
+  const extractDataFromPdfLocally = async (fileOrDataUrl: File | string, fileName: string) => {
+    setIsAnalyzingPdf(true);
+    setPdfSuccessNotice(null);
     setErrorMessage('');
 
     try {
-      const response = await fetch('/api/extract-work-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          base64Data: dataUrl,
-          mimeType: 'application/pdf',
-          fileName,
-        }),
-      });
+      const ext = await parsePdfClientSide(fileOrDataUrl, fileName);
 
-      const result = await response.json();
+      let detectedFields = 0;
+      let dateNotice = '';
 
-      if (result.success && result.extracted) {
-        const ext = result.extracted;
-        if (ext.ot && typeof ext.ot === 'string' && ext.ot.trim()) {
-          setOt(ext.ot.trim().toUpperCase());
-        }
-        if (ext.client && typeof ext.client === 'string' && ext.client.trim()) {
-          setClient(ext.client.trim());
-        }
-        if (ext.deliveryDate && typeof ext.deliveryDate === 'string' && ext.deliveryDate.trim()) {
-          const dateMatch = ext.deliveryDate.match(/\d{4}-\d{2}-\d{2}/);
-          if (dateMatch) {
-            setDeliveryDate(dateMatch[0]);
+      if (ext.ot && ext.ot.trim()) {
+        setOt(ext.ot.trim().toUpperCase());
+        detectedFields++;
+      }
+      if (ext.client && ext.client.trim()) {
+        setClient(ext.client.trim());
+        detectedFields++;
+      }
+      // Creation date: update if different from current
+      if (ext.creationDate && ext.creationDate.trim()) {
+        const pdfDate = ext.creationDate.trim();
+        if (pdfDate !== createdAt) {
+          setCreatedAt(pdfDate);
+          detectedFields++;
+          dateNotice = ` Fecha de creación actualizada a ${pdfDate} según el PDF.`;
+          if (job) {
+            updateWorkOrder(job.id, { createdAt: new Date(pdfDate).toISOString() });
           }
         }
-        if (ext.isUrgent !== undefined) {
-          setIsUrgent(Boolean(ext.isUrgent));
-        }
-        if (ext.notes && typeof ext.notes === 'string' && ext.notes.trim()) {
-          setNotes(ext.notes.trim());
-        }
+      }
+      if (ext.deliveryDate && ext.deliveryDate.trim()) {
+        setDeliveryDate(ext.deliveryDate.trim());
+        detectedFields++;
+      }
+      if (ext.isUrgent !== undefined) {
+        setIsUrgent(Boolean(ext.isUrgent));
+      }
+      if (ext.notes && ext.notes.trim()) {
+        setNotes(ext.notes.trim());
+        detectedFields++;
+      }
 
-        setAiSuccessNotice(
-          '✨ Datos identificados y autorellenados con éxito desde el PDF (OT, Cliente, Fecha y Notas). Recuerda asignar el operario, departamento y alertas manualmente.'
+      if (detectedFields > 0) {
+        setPdfSuccessNotice(
+          `✨ Datos identificados y autorellenados localmente en el navegador (100% autónomo, sin API ni créditos).${dateNotice} Recuerda asignar operario, departamento y alertas manualmente.`
         );
       } else {
-        setAiSuccessNotice('Archivo PDF adjuntado. Puedes completar los campos manualmente a continuación.');
+        setPdfSuccessNotice(
+          'Archivo PDF adjuntado correctamente. Puedes completar los campos manualmente a continuación.'
+        );
       }
     } catch (err: any) {
-      console.warn('AI analysis error:', err);
-      setAiSuccessNotice('Archivo PDF adjuntado correctamente. Puedes completar los datos manualmente.');
+      console.warn('Client-side PDF extraction error:', err);
+      setPdfSuccessNotice('Archivo PDF adjuntado. Puedes completar los datos manualmente.');
     } finally {
-      setIsAnalyzingAi(false);
+      setIsAnalyzingPdf(false);
     }
   };
 
@@ -210,10 +221,8 @@ export const JobModal: React.FC<JobModalProps> = ({
         await uploadJobPdf(job.id, file);
       }
 
-      // Automatically trigger AI extraction on uploaded PDF for new jobs
-      if (isCreating) {
-        await extractDataFromPdfWithAi(pdfDataUrl, file.name);
-      }
+      // Automatically trigger client-side extraction on uploaded PDF for both new and existing jobs
+      await extractDataFromPdfLocally(file, file.name);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -235,7 +244,7 @@ export const JobModal: React.FC<JobModalProps> = ({
     if (job) {
       deleteJobPdf(job.id);
     }
-    setAiSuccessNotice(null);
+    setPdfSuccessNotice(null);
   };
 
   const handleSave = () => {
@@ -252,6 +261,7 @@ export const JobModal: React.FC<JobModalProps> = ({
       const res = createWorkOrder({
         ot,
         client,
+        createdAt: createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
         deliveryDate: deliveryDate || undefined,
         assignedOperatorId,
         departmentId,
@@ -281,6 +291,7 @@ export const JobModal: React.FC<JobModalProps> = ({
         notes,
         statusId,
         pdfAttachment: attachedPdf || undefined,
+        createdAt: createdAt ? new Date(createdAt).toISOString() : undefined,
       };
 
       if (isAdmin) {
@@ -348,30 +359,30 @@ export const JobModal: React.FC<JobModalProps> = ({
             </div>
           )}
 
-          {/* AI Auto-fill Status */}
-          {isAnalyzingAi && (
+          {/* Client-Side PDF Auto-fill Status */}
+          {isAnalyzingPdf && (
             <div className="p-4 rounded-2xl bg-indigo-50/90 border border-indigo-200/90 flex items-center gap-3 animate-pulse">
               <Loader2 className="w-5 h-5 text-indigo-600 animate-spin shrink-0" />
               <div>
                 <p className="text-xs font-bold text-indigo-950">
-                  Leyendo PDF e identificando datos con Inteligencia Artificial...
+                  Leyendo archivo PDF localmente en el navegador...
                 </p>
                 <p className="text-[11px] text-indigo-700">
-                  Extrayendo número de OT, cliente, fecha de entrega y notas técnicas del documento PDF.
+                  Extrayendo datos de forma 100% autónoma en el cliente (sin claves de API ni consumo de créditos).
                 </p>
               </div>
             </div>
           )}
 
-          {aiSuccessNotice && !isAnalyzingAi && (
+          {pdfSuccessNotice && !isAnalyzingPdf && (
             <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-start justify-between gap-2 text-xs text-emerald-800 animate-in fade-in">
               <div className="flex items-start gap-2">
                 <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>{aiSuccessNotice}</span>
+                <span>{pdfSuccessNotice}</span>
               </div>
               <button
                 type="button"
-                onClick={() => setAiSuccessNotice(null)}
+                onClick={() => setPdfSuccessNotice(null)}
                 className="text-emerald-600 hover:text-emerald-800 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
@@ -472,7 +483,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      disabled={isAnalyzingAi}
+                      disabled={isAnalyzingPdf}
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer shadow-xs transition-all active:scale-95 disabled:opacity-50"
                     >
                       <Upload className="w-4 h-4" />
@@ -530,8 +541,31 @@ export const JobModal: React.FC<JobModalProps> = ({
             </div>
           </div>
 
-          {/* Delivery Date & Urgent Toggle */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+          {/* Creation Date & Delivery Date */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                <span>Fecha de Creación / Entrada *</span>
+                <span className="text-[10px] text-indigo-600 font-semibold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                  Auto / PDF
+                </span>
+              </label>
+              <input
+                type="date"
+                disabled={!isAdmin && !isOperario}
+                value={createdAt}
+                onChange={(e) => setCreatedAt(e.target.value)}
+                className={`w-full text-sm px-3.5 py-2.5 rounded-xl border ${
+                  !isAdmin && !isOperario
+                    ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
+                    : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
+                }`}
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Generada automáticamente. Si adjuntas un PDF con otra fecha, se actualizará sola.
+              </p>
+            </div>
+
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                 Fecha de entrega (opcional)
@@ -547,35 +581,39 @@ export const JobModal: React.FC<JobModalProps> = ({
                     : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
                 }`}
               />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Plazo límite o compromiso de entrega con el cliente.
+              </p>
             </div>
+          </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Prioridad / Urgencia
-              </label>
-              <button
-                type="button"
-                disabled={!isAdmin}
-                onClick={() => setIsUrgent(!isUrgent)}
-                className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm font-bold transition-all ${
-                  isUrgent
-                    ? 'bg-rose-50 border-rose-300 text-rose-700 shadow-xs'
-                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                } ${!isAdmin ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
+          {/* Urgent Toggle */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Prioridad / Urgencia
+            </label>
+            <button
+              type="button"
+              disabled={!isAdmin}
+              onClick={() => setIsUrgent(!isUrgent)}
+              className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm font-bold transition-all ${
+                isUrgent
+                  ? 'bg-rose-50 border-rose-300 text-rose-700 shadow-xs'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+              } ${!isAdmin ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
+            >
+              <div className="flex items-center gap-2">
+                <Flame className={`w-4 h-4 ${isUrgent ? 'text-rose-600' : 'text-slate-400'}`} />
+                <span>{isUrgent ? 'TRABAJO URGENTE' : 'Normal (No urgente)'}</span>
+              </div>
+              <span
+                className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                  isUrgent ? 'bg-rose-600 border-rose-600 text-white' : 'border-slate-300'
+                }`}
               >
-                <div className="flex items-center gap-2">
-                  <Flame className={`w-4 h-4 ${isUrgent ? 'text-rose-600' : 'text-slate-400'}`} />
-                  <span>{isUrgent ? 'TRABAJO URGENTE' : 'Normal (No urgente)'}</span>
-                </div>
-                <span
-                  className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                    isUrgent ? 'bg-rose-600 border-rose-600 text-white' : 'border-slate-300'
-                  }`}
-                >
-                  {isUrgent && <Check className="w-3 h-3" />}
-                </span>
-              </button>
-            </div>
+                {isUrgent && <Check className="w-3 h-3" />}
+              </span>
+            </button>
           </div>
 
           {/* Department & Operator assignment (Always manual) */}
@@ -798,7 +836,7 @@ export const JobModal: React.FC<JobModalProps> = ({
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={isSaving || isAnalyzingAi}
+                disabled={isSaving || isAnalyzingPdf}
                 className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-xl shadow-xs transition-all disabled:opacity-50 cursor-pointer"
               >
                 {isSaving ? 'Guardando...' : isCreating ? 'Crear Trabajo' : 'Guardar Cambios'}

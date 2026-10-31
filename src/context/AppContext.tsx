@@ -61,9 +61,11 @@ interface AppContextType {
   quickSwitchUser: (userId: string) => void;
 
   // Work Orders methods
-  createWorkOrder: (data: Omit<WorkOrder, 'id' | 'companyId' | 'createdAt' | 'updatedAt' | 'alerts'> & { initialAlert?: string }) => { success: boolean; error?: string };
+  createWorkOrder: (data: Omit<WorkOrder, 'id' | 'companyId' | 'updatedAt' | 'alerts'> & { initialAlert?: string; createdAt?: string }) => { success: boolean; error?: string };
   updateWorkOrder: (id: string, updates: Partial<WorkOrder>) => { success: boolean; error?: string };
   deleteWorkOrder: (id: string) => { success: boolean; error?: string };
+  reorderWorkOrder: (workOrderId: string, direction: 'up' | 'down') => { success: boolean; error?: string };
+  resetWorkOrdersOrderToDate: () => void;
   addAlertToJob: (workOrderId: string, alertText: string) => void;
   removeAlertFromJob: (workOrderId: string, alertId: string) => void;
   updateJobNotes: (workOrderId: string, notes: string) => void;
@@ -399,7 +401,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const workOrders = useMemo(() => {
     if (!companyId) return [];
-    return allWorkOrders.filter((w) => w.companyId === companyId);
+    return allWorkOrders
+      .filter((w) => w.companyId === companyId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [allWorkOrders, companyId]);
 
   const notifications = useMemo(() => {
@@ -674,7 +678,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // WORK ORDERS LOGIC
   // ==========================================
   const createWorkOrder = (
-    data: Omit<WorkOrder, 'id' | 'companyId' | 'createdAt' | 'updatedAt' | 'alerts'> & { initialAlert?: string }
+    data: Omit<WorkOrder, 'id' | 'companyId' | 'updatedAt' | 'alerts'> & { initialAlert?: string; createdAt?: string }
   ) => {
     if (!currentUser || currentUser.role !== 'administrador' || !companyId) {
       return { success: false, error: 'Solo el administrador puede crear nuevos trabajos.' };
@@ -692,6 +696,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
+    const currentCompanyJobs = allWorkOrders.filter((w) => w.companyId === companyId);
+    const initialOrderPosition = data.orderPosition ?? currentCompanyJobs.length;
+
     const newOrder: WorkOrder = {
       id: `wo-${Date.now()}`,
       companyId,
@@ -705,8 +712,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       alerts: initialAlerts,
       notes: data.notes || '',
       pdfAttachment: data.pdfAttachment,
-      createdAt: new Date().toISOString(),
+      createdAt: data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      orderPosition: initialOrderPosition,
     };
 
     setAllWorkOrders((prev) => [newOrder, ...prev]);
@@ -829,6 +837,101 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAllWorkOrders((prev) => prev.filter((w) => w.id !== id));
     fsDelete('workOrders', id);
     return { success: true };
+  };
+
+  /**
+   * Repositions work orders under the operator's/admin's criteria (criterio del operario).
+   * Moves a job up or down relative to its adjacent job and updates both in state and Firestore.
+   */
+  const reorderWorkOrder = (workOrderId: string, direction: 'up' | 'down') => {
+    if (!currentUser || currentUser.role === 'solo_lectura') {
+      return { success: false, error: 'Los usuarios de solo lectura no pueden reposicionar trabajos.' };
+    }
+    if (!companyId) return { success: false, error: 'Empresa no encontrada.' };
+
+    // Get all jobs for this company, sorted by active orderPosition, falling back to createdAt
+    const companyJobs = allWorkOrders
+      .filter((w) => w.companyId === companyId)
+      .slice()
+      .sort((a, b) => {
+        if (a.orderPosition !== undefined && b.orderPosition !== undefined) {
+          return a.orderPosition - b.orderPosition;
+        }
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+
+    // Ensure strictly unique sequential orderPositions (0, 1, 2, ...)
+    companyJobs.forEach((job, index) => {
+      job.orderPosition = index;
+    });
+
+    const currentIndex = companyJobs.findIndex((w) => w.id === workOrderId);
+    if (currentIndex === -1) return { success: false, error: 'Trabajo no encontrado.' };
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= companyJobs.length) {
+      return { success: false, error: 'El trabajo ya está en la posición máxima.' };
+    }
+
+    // Swap positions
+    const temp = companyJobs[currentIndex];
+    companyJobs[currentIndex] = companyJobs[targetIndex];
+    companyJobs[targetIndex] = temp;
+
+    const updatedAt = new Date().toISOString();
+    const posMap = new Map<string, number>();
+
+    companyJobs.forEach((job, idx) => {
+      job.orderPosition = idx;
+      posMap.set(job.id, idx);
+    });
+
+    // Update local state
+    setAllWorkOrders((prev) =>
+      prev.map((w) => {
+        if (posMap.has(w.id)) {
+          return { ...w, orderPosition: posMap.get(w.id)!, updatedAt };
+        }
+        return w;
+      })
+    );
+
+    // Persist swapped positions to Firestore
+    const jobA = companyJobs[currentIndex];
+    const jobB = companyJobs[targetIndex];
+    fsUpdate('workOrders', jobA.id, { orderPosition: jobA.orderPosition, updatedAt });
+    fsUpdate('workOrders', jobB.id, { orderPosition: jobB.orderPosition, updatedAt });
+
+    return { success: true };
+  };
+
+  /**
+   * Resets the manual operator order back to the default creation date order
+   */
+  const resetWorkOrdersOrderToDate = () => {
+    if (!companyId) return;
+
+    const sortedByDate = allWorkOrders
+      .filter((w) => w.companyId === companyId)
+      .slice()
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const updatedAt = new Date().toISOString();
+    const posMap = new Map<string, number>();
+
+    sortedByDate.forEach((job, idx) => {
+      posMap.set(job.id, idx);
+      fsUpdate('workOrders', job.id, { orderPosition: idx, updatedAt });
+    });
+
+    setAllWorkOrders((prev) =>
+      prev.map((w) => {
+        if (posMap.has(w.id)) {
+          return { ...w, orderPosition: posMap.get(w.id)!, updatedAt };
+        }
+        return w;
+      })
+    );
   };
 
   const addAlertToJob = (workOrderId: string, alertText: string) => {
@@ -1240,6 +1343,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createWorkOrder,
         updateWorkOrder,
         deleteWorkOrder,
+        reorderWorkOrder,
+        resetWorkOrdersOrderToDate,
         addAlertToJob,
         removeAlertFromJob,
         updateJobNotes,

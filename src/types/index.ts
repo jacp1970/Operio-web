@@ -66,8 +66,9 @@ export interface WorkOrder {
   alerts: WorkAlert[]; // Alertas activas
   notes: string; // Recuadro para notas
   pdfAttachment?: PdfAttachment; // Archivo PDF adjunto
-  createdAt: string;
+  createdAt: string; // Fecha de creación (automática o extraída de PDF)
   updatedAt: string;
+  orderPosition?: number; // Posición bajo criterio de operarios para ordenación personalizada
 }
 
 export type NotificationType =
