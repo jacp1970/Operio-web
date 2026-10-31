@@ -77,6 +77,7 @@ function MainApp() {
         <Header
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
           onOpenNewJobModal={handleOpenNewJobModal}
+          onOpenJobDetail={handleOpenJobDetail}
         />
 
         {/* Dynamic Workspace Area */}
@@ -103,7 +104,10 @@ function MainApp() {
           {currentNav === 'usuarios' && <UsersView />}
 
           {currentNav === 'notificaciones' && (
-            <NotificationsView onOpenJobByOt={handleOpenJobByOt} />
+            <NotificationsView
+              onOpenJobDetail={handleOpenJobDetail}
+              onOpenJobByOt={handleOpenJobByOt}
+            />
           )}
         </main>
       </div>
