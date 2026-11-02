@@ -12,6 +12,7 @@ import {
   LogOut,
   X,
   ShieldCheck,
+  ShieldAlert,
   Wrench,
   Eye,
 } from 'lucide-react';
@@ -236,6 +237,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
           })}
         </nav>
       </div>
+
+      {/* Administrator Danger Option (Reset / Delete Company) */}
+      {currentUser.role === 'administrador' && (
+        <div className="px-3 pb-2">
+          <button
+            onClick={() => handleSelectNav('resetear_empresa')}
+            className={`w-full flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              currentNav === 'resetear_empresa'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'text-rose-600 hover:bg-rose-50'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4 text-rose-500" />
+            <span>Resetear / Borrar Empresa</span>
+          </button>
+        </div>
+      )}
 
       {/* Footer Info */}
       <div className="p-4 border-t border-slate-200/60 text-[11px] text-slate-400 flex items-center justify-between">

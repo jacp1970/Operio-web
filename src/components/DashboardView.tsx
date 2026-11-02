@@ -8,24 +8,30 @@ import {
   Clock,
   Users,
   Building,
+  Building2,
   ArrowRight,
   FileText,
   Calendar,
   Eye,
   Check,
+  Trash2,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface DashboardViewProps {
   onOpenJobDetail: (job: WorkOrder) => void;
   onOpenNewJobModal: () => void;
+  onOpenResetCompanyModal?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenJobDetail,
   onOpenNewJobModal,
+  onOpenResetCompanyModal,
 }) => {
   const {
     currentUser,
+    currentCompany,
     workOrders,
     users,
     departments,

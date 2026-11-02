@@ -98,4 +98,5 @@ export type NavigationItemKey =
   | 'estados'
   | 'usuarios'
   | 'notificaciones'
-  | 'cerrar_sesion';
+  | 'cerrar_sesion'
+  | 'resetear_empresa';

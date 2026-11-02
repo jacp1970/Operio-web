@@ -11,6 +11,8 @@ import { NotificationsView } from './components/NotificationsView';
 import { LoginView } from './components/LoginView';
 import { JobModal } from './components/JobModal';
 import { PdfViewerModal } from './components/PdfViewerModal';
+import { ResetCompanyModal } from './components/ResetCompanyModal';
+import { ResetCompanyView } from './components/ResetCompanyView';
 import { WorkOrder } from './types';
 
 function MainApp() {
@@ -22,6 +24,9 @@ function MainApp() {
   // Job Modal state
   const [jobModalOpen, setJobModalOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<WorkOrder | null>(null);
+
+  // Reset & Delete Company modal state (administrator only)
+  const [resetCompanyModalOpen, setResetCompanyModalOpen] = useState(false);
 
   // PDF Preview modal state
   const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
@@ -78,6 +83,7 @@ function MainApp() {
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
           onOpenNewJobModal={handleOpenNewJobModal}
           onOpenJobDetail={handleOpenJobDetail}
+          onOpenResetCompanyModal={() => setResetCompanyModalOpen(true)}
         />
 
         {/* Dynamic Workspace Area */}
@@ -86,6 +92,7 @@ function MainApp() {
             <DashboardView
               onOpenJobDetail={handleOpenJobDetail}
               onOpenNewJobModal={handleOpenNewJobModal}
+              onOpenResetCompanyModal={() => setResetCompanyModalOpen(true)}
             />
           )}
 
@@ -109,6 +116,10 @@ function MainApp() {
               onOpenJobByOt={handleOpenJobByOt}
             />
           )}
+
+          {currentNav === 'resetear_empresa' && (
+            <ResetCompanyView onCancel={() => setCurrentNav('panel_de_control')} />
+          )}
         </main>
       </div>
 
@@ -125,6 +136,12 @@ function MainApp() {
         attachment={activePdfAttachment}
         isOpen={pdfViewerOpen}
         onClose={() => setPdfViewerOpen(false)}
+      />
+
+      {/* Modal: Administrator Danger Zone - Reset & Delete Company */}
+      <ResetCompanyModal
+        isOpen={resetCompanyModalOpen}
+        onClose={() => setResetCompanyModalOpen(false)}
       />
     </div>
   );

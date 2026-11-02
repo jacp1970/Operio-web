@@ -15,6 +15,8 @@ import {
   Eye,
   ArrowRight,
   ExternalLink,
+  Trash2,
+  ShieldAlert,
 } from 'lucide-react';
 import { WorkOrder, AppNotification, NotificationType } from '../types';
 
@@ -22,12 +24,14 @@ interface HeaderProps {
   onOpenMobileSidebar: () => void;
   onOpenNewJobModal?: () => void;
   onOpenJobDetail?: (job: WorkOrder) => void;
+  onOpenResetCompanyModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenMobileSidebar,
   onOpenNewJobModal,
   onOpenJobDetail,
+  onOpenResetCompanyModal,
 }) => {
   const {
     currentUser,
@@ -337,18 +341,33 @@ export const Header: React.FC<HeaderProps> = ({
                     )}
                   </div>
 
-                  <div className="p-1">
+                  <div className="p-1 space-y-0.5">
                     <button
                       onClick={() => {
                         setUserMenuOpen(false);
                         logout();
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                     >
-                      <LogOut className="w-4 h-4 text-rose-500" />
+                      <LogOut className="w-4 h-4 text-slate-500" />
                       <span>Cerrar sesión</span>
                     </button>
                   </div>
+
+                  {currentUser.role === 'administrador' && (
+                    <div className="pt-1 mt-0.5 border-t border-slate-100 p-1">
+                      <button
+                        onClick={() => {
+                          setUserMenuOpen(false);
+                          setCurrentNav('resetear_empresa');
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                      >
+                        <ShieldAlert className="w-4 h-4 text-rose-600" />
+                        <span>Resetear y borrar empresa</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </>
             )}

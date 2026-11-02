@@ -59,6 +59,11 @@ interface AppContextType {
   }) => { success: boolean; error?: string };
   recoverAdminCredentials: (companyCode: string, email: string) => { success: boolean; message: string; temporaryPassword?: string };
   quickSwitchUser: (userId: string) => void;
+  deleteCurrentCompany: () => Promise<{ success: boolean; error?: string }>;
+  resetCurrentCompanyData: (options?: {
+    resetDeptsAndStatuses?: boolean;
+    removeOperarios?: boolean;
+  }) => Promise<{ success: boolean; error?: string }>;
 
   // Work Orders methods
   createWorkOrder: (data: Omit<WorkOrder, 'id' | 'companyId' | 'updatedAt' | 'alerts'> & { initialAlert?: string; createdAt?: string }) => { success: boolean; error?: string };
@@ -672,6 +677,153 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentUser(user);
       setCurrentNav('panel_de_control');
     }
+  };
+
+  /**
+   * Resets and permanently deletes the company and all associated records:
+   * work orders, attachments, departments, statuses, users and notifications.
+   * Then logs the user out and redirects directly to the login / register screen.
+   */
+  const deleteCurrentCompany = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser || currentUser.role !== 'administrador') {
+      return { success: false, error: 'Solo el administrador puede borrar la empresa.' };
+    }
+    if (!currentCompany) {
+      return { success: false, error: 'No se ha encontrado la empresa activa.' };
+    }
+
+    const cId = currentCompany.id;
+
+    // Collect all elements belonging to this company
+    const jobsToDelete = allWorkOrders.filter((w) => w.companyId === cId);
+    const deptsToDelete = allDepartments.filter((d) => d.companyId === cId);
+    const statusesToDelete = allStatuses.filter((s) => s.companyId === cId);
+    const usersToDelete = allUsers.filter((u) => u.companyId === cId);
+    const notifsToDelete = allNotifications.filter((n) => n.companyId === cId);
+
+    // Delete in Firestore
+    const deletePromises: Promise<void>[] = [];
+    deletePromises.push(fsDelete('companies', cId));
+    jobsToDelete.forEach((j) => deletePromises.push(fsDelete('workOrders', j.id)));
+    deptsToDelete.forEach((d) => deletePromises.push(fsDelete('departments', d.id)));
+    statusesToDelete.forEach((s) => deletePromises.push(fsDelete('statuses', s.id)));
+    usersToDelete.forEach((u) => deletePromises.push(fsDelete('users', u.id)));
+    notifsToDelete.forEach((n) => deletePromises.push(fsDelete('notifications', n.id)));
+
+    try {
+      await Promise.allSettled(deletePromises);
+    } catch (e) {
+      console.warn('Error deleting company from Firestore:', e);
+    }
+
+    // Update local states
+    setCompanies((prev) => prev.filter((c) => c.id !== cId));
+    setAllWorkOrders((prev) => prev.filter((w) => w.companyId !== cId));
+    setAllDepartments((prev) => prev.filter((d) => d.companyId !== cId));
+    setAllStatuses((prev) => prev.filter((s) => s.companyId !== cId));
+    setAllUsers((prev) => prev.filter((u) => u.companyId !== cId));
+    setAllNotifications((prev) => prev.filter((n) => n.companyId !== cId));
+
+    // Clear session so the app jumps back to login
+    setCurrentUser(null);
+    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+
+    return { success: true };
+  };
+
+  /**
+   * Resets operational data of the active company (work orders, attachments, alerts, notifications).
+   * Optionally resets departments and statuses back to defaults and/or removes registered operarios.
+   * Keeps company registered and administrator session active.
+   */
+  const resetCurrentCompanyData = async (options?: {
+    resetDeptsAndStatuses?: boolean;
+    removeOperarios?: boolean;
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser || currentUser.role !== 'administrador') {
+      return { success: false, error: 'Solo el administrador puede resetear los datos de la empresa.' };
+    }
+    if (!currentCompany) {
+      return { success: false, error: 'No se ha encontrado la empresa activa.' };
+    }
+
+    const cId = currentCompany.id;
+
+    // 1. Collect jobs and notifications to delete
+    const jobsToDelete = allWorkOrders.filter((w) => w.companyId === cId);
+    const notifsToDelete = allNotifications.filter((n) => n.companyId === cId);
+
+    const deletePromises: Promise<void>[] = [];
+    jobsToDelete.forEach((j) => deletePromises.push(fsDelete('workOrders', j.id)));
+    notifsToDelete.forEach((n) => deletePromises.push(fsDelete('notifications', n.id)));
+
+    // 2. Optionally remove operarios
+    if (options?.removeOperarios) {
+      const operariosToDelete = allUsers.filter(
+        (u) => u.companyId === cId && u.role !== 'administrador'
+      );
+      operariosToDelete.forEach((u) => deletePromises.push(fsDelete('users', u.id)));
+      setAllUsers((prev) =>
+        prev.filter((u) => u.companyId !== cId || u.role === 'administrador')
+      );
+    }
+
+    // 3. Optionally reset departments & statuses to default initial state
+    if (options?.resetDeptsAndStatuses) {
+      const deptsToDelete = allDepartments.filter((d) => d.companyId === cId);
+      const statusesToDelete = allStatuses.filter((s) => s.companyId === cId);
+      deptsToDelete.forEach((d) => deletePromises.push(fsDelete('departments', d.id)));
+      statusesToDelete.forEach((s) => deletePromises.push(fsDelete('statuses', s.id)));
+
+      const freshDepts: Department[] = [
+        { id: `dept-${Date.now()}-1`, companyId: cId, name: 'Mecanizado y Fabricación' },
+        { id: `dept-${Date.now()}-2`, companyId: cId, name: 'Montaje y Ensamblaje' },
+        { id: `dept-${Date.now()}-3`, companyId: cId, name: 'Control de Calidad' },
+      ];
+
+      const freshStatuses: JobStatus[] = [
+        { id: `stat-${Date.now()}-1`, companyId: cId, name: 'Pendiente', color: 'amber', isCompleted: false },
+        { id: `stat-${Date.now()}-2`, companyId: cId, name: 'En curso', color: 'sky', isCompleted: false },
+        { id: `stat-${Date.now()}-3`, companyId: cId, name: 'Control de calidad', color: 'indigo', isCompleted: false },
+        { id: `stat-${Date.now()}-4`, companyId: cId, name: 'Terminado', color: 'emerald', isCompleted: true },
+      ];
+
+      freshDepts.forEach((d) => deletePromises.push(fsSet('departments', d.id, d)));
+      freshStatuses.forEach((s) => deletePromises.push(fsSet('statuses', s.id, s)));
+
+      setAllDepartments((prev) => [
+        ...prev.filter((d) => d.companyId !== cId),
+        ...freshDepts,
+      ]);
+      setAllStatuses((prev) => [
+        ...prev.filter((s) => s.companyId !== cId),
+        ...freshStatuses,
+      ]);
+
+      // Update admin's departmentIds to new default department IDs
+      const newAdminDeptIds = freshDepts.map((d) => d.id);
+      setAllUsers((prev) =>
+        prev.map((u) =>
+          u.id === currentUser.id ? { ...u, departmentIds: newAdminDeptIds } : u
+        )
+      );
+      setCurrentUser((prev) =>
+        prev ? { ...prev, departmentIds: newAdminDeptIds } : null
+      );
+      deletePromises.push(fsUpdate('users', currentUser.id, { departmentIds: newAdminDeptIds }));
+    }
+
+    try {
+      await Promise.allSettled(deletePromises);
+    } catch (e) {
+      console.warn('Error resetting company data in Firestore:', e);
+    }
+
+    // Update local work orders and notifications
+    setAllWorkOrders((prev) => prev.filter((w) => w.companyId !== cId));
+    setAllNotifications((prev) => prev.filter((n) => n.companyId !== cId));
+
+    return { success: true };
   };
 
   // ==========================================
@@ -1340,6 +1492,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         registerAdminAndCompany,
         recoverAdminCredentials,
         quickSwitchUser,
+        deleteCurrentCompany,
+        resetCurrentCompanyData,
         createWorkOrder,
         updateWorkOrder,
         deleteWorkOrder,
