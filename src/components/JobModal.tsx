@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { WorkOrder, PdfAttachment } from '../types';
+import { WorkOrder, PdfAttachment, WorkOrderTimer, WorkOrderTimeSession } from '../types';
 import { parsePdfClientSide } from '../utils/pdfExtractor';
+import {
+  formatSecondsToHMS,
+  formatSecondsToHuman,
+  computeLiveTimerSeconds,
+} from '../utils/timeUtils';
 import {
   X,
   FileText,
@@ -20,6 +25,11 @@ import {
   Eye,
   Users,
   Clock,
+  Timer,
+  Play,
+  Pause,
+  RotateCcw,
+  History,
 } from 'lucide-react';
 
 interface JobModalProps {
@@ -76,6 +86,12 @@ export const JobModal: React.FC<JobModalProps> = ({
   const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
   const [pdfSuccessNotice, setPdfSuccessNotice] = useState<string | null>(null);
 
+  // Stopwatch / Cronómetro state
+  const [timer, setTimer] = useState<WorkOrderTimer | undefined>(job?.timer);
+  const [liveElapsedSeconds, setLiveElapsedSeconds] = useState<number>(0);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showSessionsList, setShowSessionsList] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Initialize form state
@@ -83,6 +99,8 @@ export const JobModal: React.FC<JobModalProps> = ({
     setShowDeleteConfirm(false);
     setIsAnalyzingPdf(false);
     setPdfSuccessNotice(null);
+    setShowResetConfirm(false);
+    setShowSessionsList(false);
 
     if (job) {
       setOt(job.ot);
@@ -96,6 +114,8 @@ export const JobModal: React.FC<JobModalProps> = ({
       setNotes(job.notes || '');
       setAlerts(job.alerts || []);
       setAttachedPdf(job.pdfAttachment || null);
+      setTimer(job.timer);
+      setLiveElapsedSeconds(computeLiveTimerSeconds(job.timer));
     } else {
       // New job defaults: OT starts empty so the user can enter their own work order number directly
       setOt('');
@@ -110,10 +130,90 @@ export const JobModal: React.FC<JobModalProps> = ({
       setNotes('');
       setAlerts([]);
       setAttachedPdf(null);
+      setTimer(undefined);
+      setLiveElapsedSeconds(0);
     }
     setNewAlertText('');
     setErrorMessage('');
   }, [job, isOpen, users, departments, statuses]);
+
+  // Live stopwatch tick effect: updates liveElapsedSeconds every second when isRunning is true
+  useEffect(() => {
+    setLiveElapsedSeconds(computeLiveTimerSeconds(timer));
+    if (!timer?.isRunning) return;
+
+    const interval = setInterval(() => {
+      setLiveElapsedSeconds(computeLiveTimerSeconds(timer));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [timer]);
+
+  // Stopwatch Handlers: Start, Pause/Stop, Reset
+  const handleStartTimer = () => {
+    if (!currentUser || isReadOnly) return;
+    const nowIso = new Date().toISOString();
+    const newTimer: WorkOrderTimer = {
+      totalSeconds: timer?.totalSeconds || 0,
+      isRunning: true,
+      activeStartedAt: nowIso,
+      activeOperatorId: currentUser.id,
+      activeOperatorName: currentUser.name,
+      sessions: timer?.sessions || [],
+    };
+    setTimer(newTimer);
+    setLiveElapsedSeconds(computeLiveTimerSeconds(newTimer));
+    if (job) {
+      updateWorkOrder(job.id, { timer: newTimer });
+    }
+  };
+
+  const handlePauseTimer = () => {
+    if (!currentUser || isReadOnly || !timer) return;
+    const now = Date.now();
+    const start = timer.activeStartedAt ? new Date(timer.activeStartedAt).getTime() : now;
+    const sessionSeconds = Math.max(0, Math.floor((now - start) / 1000));
+    const newTotal = (timer.totalSeconds || 0) + sessionSeconds;
+    const session: WorkOrderTimeSession = {
+      id: `sess-${Date.now()}`,
+      operatorId: timer.activeOperatorId || currentUser.id,
+      operatorName: timer.activeOperatorName || currentUser.name,
+      startedAt: timer.activeStartedAt || new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      seconds: sessionSeconds,
+    };
+    const newTimer: WorkOrderTimer = {
+      totalSeconds: newTotal,
+      isRunning: false,
+      activeStartedAt: undefined,
+      activeOperatorId: undefined,
+      activeOperatorName: undefined,
+      sessions: [session, ...(timer.sessions || [])],
+    };
+    setTimer(newTimer);
+    setLiveElapsedSeconds(newTotal);
+    if (job) {
+      updateWorkOrder(job.id, { timer: newTimer });
+    }
+  };
+
+  const handleResetTimer = () => {
+    if (isReadOnly) return;
+    const newTimer: WorkOrderTimer = {
+      totalSeconds: 0,
+      isRunning: false,
+      activeStartedAt: undefined,
+      activeOperatorId: undefined,
+      activeOperatorName: undefined,
+      sessions: [],
+    };
+    setTimer(newTimer);
+    setLiveElapsedSeconds(0);
+    setShowResetConfirm(false);
+    if (job) {
+      updateWorkOrder(job.id, { timer: newTimer });
+    }
+  };
 
   if (!isOpen || !currentUser) return null;
 
@@ -274,6 +374,7 @@ export const JobModal: React.FC<JobModalProps> = ({
         isUrgent,
         notes,
         pdfAttachment: attachedPdf || undefined,
+        timer,
       });
 
       if (!res.success) {
@@ -297,6 +398,7 @@ export const JobModal: React.FC<JobModalProps> = ({
         statusId,
         pdfAttachment: attachedPdf || undefined,
         createdAt: createdAt ? new Date(createdAt).toISOString() : undefined,
+        timer,
       };
 
       if (isAdmin) {
@@ -759,6 +861,189 @@ export const JobModal: React.FC<JobModalProps> = ({
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* ======================================================== */}
+          {/* CRONÓMETRO DE TIEMPO DE TRABAJO (OPCIONAL) */}
+          {/* ======================================================== */}
+          <div className="p-4 rounded-2xl bg-slate-900 text-white shadow-md border border-slate-800 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div
+                  className={`p-2 rounded-xl ${
+                    timer?.isRunning
+                      ? 'bg-emerald-500/20 text-emerald-400 ring-2 ring-emerald-500/40'
+                      : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  <Timer className={`w-4 h-4 ${timer?.isRunning ? 'animate-pulse' : ''}`} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-bold text-white tracking-tight">
+                      Cronómetro de Trabajo
+                    </h4>
+                    <span className="text-[10px] font-semibold text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                      Opcional
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Solo contará el tiempo que marque el cronómetro para calcular la duración.
+                  </p>
+                </div>
+              </div>
+
+              {/* Status pill badge */}
+              <div className="self-start sm:self-auto">
+                {timer?.isRunning ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                    <span>EN MARCHA</span>
+                  </span>
+                ) : liveElapsedSeconds > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span>EN PAUSA</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                    <span>SIN INICIAR</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Counter display & Action Buttons */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+              <div>
+                <div className="flex items-baseline gap-2.5">
+                  <span className="font-mono text-3xl sm:text-4xl font-black tracking-wider text-white select-none">
+                    {formatSecondsToHMS(liveElapsedSeconds)}
+                  </span>
+                  {liveElapsedSeconds > 0 && (
+                    <span className="text-xs font-semibold text-emerald-400">
+                      ({formatSecondsToHuman(liveElapsedSeconds)})
+                    </span>
+                  )}
+                </div>
+
+                {timer?.isRunning && timer.activeOperatorName && (
+                  <p className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
+                    <User className="w-3 h-3 shrink-0" />
+                    <span>Iniciado por <strong>{timer.activeOperatorName}</strong></span>
+                  </p>
+                )}
+                {!timer?.isRunning && liveElapsedSeconds > 0 && (
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Tiempo total registrado: <strong>{formatSecondsToHuman(liveElapsedSeconds)}</strong>
+                  </p>
+                )}
+              </div>
+
+              {/* Controls */}
+              {!isReadOnly && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {timer?.isRunning ? (
+                    <button
+                      type="button"
+                      onClick={handlePauseTimer}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
+                    >
+                      <Pause className="w-4 h-4 fill-slate-950" />
+                      <span>Parar Cronómetro</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleStartTimer}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
+                    >
+                      <Play className="w-4 h-4 fill-slate-950" />
+                      <span>{liveElapsedSeconds > 0 ? 'Reanudar Trabajo' : 'Iniciar Trabajo'}</span>
+                    </button>
+                  )}
+
+                  {liveElapsedSeconds > 0 && !timer?.isRunning && (
+                    !showResetConfirm ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowResetConfirm(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold cursor-pointer border border-slate-700 transition-colors"
+                        title="Poner a 00:00:00"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Poner a cero</span>
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1.5 bg-rose-950/80 border border-rose-700/80 p-1.5 rounded-xl text-xs">
+                        <span className="text-[11px] text-rose-300 font-medium px-1">¿Resetear?</span>
+                        <button
+                          type="button"
+                          onClick={handleResetTimer}
+                          className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] cursor-pointer"
+                        >
+                          Sí
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowResetConfirm(false)}
+                          className="px-1.5 py-0.5 rounded text-slate-300 hover:text-white text-[11px] cursor-pointer"
+                        >
+                          No
+                        </button>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Sessions history accordion */}
+            {timer?.sessions && timer.sessions.length > 0 && (
+              <div className="pt-2 border-t border-slate-800 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setShowSessionsList(!showSessionsList)}
+                  className="text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <History className="w-3 h-3 text-indigo-400" />
+                  <span>
+                    {showSessionsList ? 'Ocultar' : 'Ver'} registro de tramos ({timer.sessions.length})
+                  </span>
+                </button>
+
+                {showSessionsList && (
+                  <div className="mt-2 space-y-1.5 max-h-36 overflow-y-auto pr-1 scrollbar-thin">
+                    {timer.sessions.map((sess, idx) => (
+                      <div
+                        key={sess.id || idx}
+                        className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-[11px]"
+                      >
+                        <span className="text-slate-300 font-medium">
+                          {sess.operatorName}
+                        </span>
+                        <div className="flex items-center gap-3 text-slate-400 font-mono">
+                          <span>
+                            {new Date(sess.startedAt).toLocaleTimeString('es-ES', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                            {sess.endedAt &&
+                              ` - ${new Date(sess.endedAt).toLocaleTimeString('es-ES', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}`}
+                          </span>
+                          <span className="font-bold text-emerald-400">
+                            +{formatSecondsToHuman(sess.seconds)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Alertas (Manual) */}

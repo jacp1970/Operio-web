@@ -16,7 +16,10 @@ import {
   Check,
   Trash2,
   ShieldAlert,
+  Timer,
 } from 'lucide-react';
+import { getDepartmentColor, getOperatorColor } from '../utils/colorUtils';
+import { formatSecondsToHuman } from '../utils/timeUtils';
 
 interface DashboardViewProps {
   onOpenJobDetail: (job: WorkOrder) => void;
@@ -74,6 +77,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const status = getStatus(job.statusId);
     const assignedOp = getUser(job.assignedOperatorId);
     const deptName = getDepartmentName(job.departmentId);
+    const deptColor = getDepartmentColor(job.departmentId, deptName);
+    const opColor = getOperatorColor(job.assignedOperatorId, assignedOp?.name, assignedOp?.color);
 
     return (
       <div
@@ -110,13 +115,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {job.client}
           </h3>
 
-          <div className="flex flex-wrap items-center gap-y-1.5 gap-x-3 text-xs text-slate-500 mb-3">
-            <span className="inline-flex items-center gap-1">
-              <Building className="w-3.5 h-3.5 text-slate-400" />
+          <div className="flex flex-wrap items-center gap-y-1.5 gap-x-2 text-xs text-slate-500 mb-3">
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-semibold ${deptColor.badgeSoft}`}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: deptColor.hex }} />
+              <Building className="w-3 h-3 opacity-80" />
               {deptName}
             </span>
-            <span className="inline-flex items-center gap-1">
-              <Users className="w-3.5 h-3.5 text-slate-400" />
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-semibold ${opColor.badgeSoft}`}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: opColor.hex }} />
+              <Users className="w-3 h-3 opacity-80" />
               {assignedOp ? assignedOp.name : 'Sin asignar'}
             </span>
             <span className="inline-flex items-center gap-1 text-slate-600 font-medium">
@@ -136,6 +143,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <span className="text-indigo-600 font-medium">· {job.participantsHistory.length} pases registrados</span>
               )}
             </span>
+            {(job.timer?.totalSeconds || job.timer?.isRunning) && (
+              <span className="inline-flex items-center justify-between text-[11px] w-full pt-1 border-t border-slate-100">
+                <span className="text-slate-500 flex items-center gap-1">
+                  <Timer className={`w-3.5 h-3.5 ${job.timer?.isRunning ? 'text-emerald-500 animate-pulse' : 'text-slate-400'}`} />
+                  <span>Tiempo cronometrado:</span>
+                </span>
+                <strong className={job.timer?.isRunning ? 'text-emerald-600 font-bold' : 'text-slate-800 font-mono font-bold'}>
+                  {job.timer?.isRunning ? 'En marcha' : formatSecondsToHuman(job.timer?.totalSeconds || 0)}
+                </strong>
+              </span>
+            )}
           </div>
 
           {/* Notes brief */}

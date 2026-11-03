@@ -976,6 +976,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdById: currentUser.id,
       createdByName: currentUser.name,
       participantsHistory: initialParticipants,
+      timer: data.timer,
     };
 
     setAllWorkOrders((prev) => [newOrder, ...prev]);

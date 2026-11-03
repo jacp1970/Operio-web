@@ -16,12 +16,14 @@ export interface User {
   role: UserRole;
   departmentIds: string[]; // Departamentos técnicos asignados
   createdAt: string;
+  color?: string; // Color distintivo para visualización
 }
 
 export interface Department {
   id: string;
   companyId: string;
   name: string;
+  color?: string; // Color distintivo para visualización
 }
 
 export interface JobStatus {
@@ -78,6 +80,24 @@ export interface WorkOrderParticipant {
   notes?: string;
 }
 
+export interface WorkOrderTimeSession {
+  id: string;
+  operatorId?: string;
+  operatorName: string;
+  startedAt: string; // ISO string
+  endedAt?: string; // ISO string
+  seconds: number; // Duración registrada en segundos
+}
+
+export interface WorkOrderTimer {
+  totalSeconds: number; // Tiempo total acumulado registrado por el cronómetro
+  isRunning: boolean; // Si el cronómetro está en marcha actualmente
+  activeStartedAt?: string; // Fecha y hora ISO en la que se inició el cronómetro
+  activeOperatorId?: string; // ID del operario que lo puso en marcha
+  activeOperatorName?: string; // Nombre del operario
+  sessions?: WorkOrderTimeSession[]; // Registro cronológico de tramos de trabajo
+}
+
 export interface WorkOrder {
   id: string;
   companyId: string;
@@ -97,6 +117,7 @@ export interface WorkOrder {
   createdById?: string; // ID del administrador que creó la orden
   createdByName?: string; // Nombre del administrador creador
   participantsHistory?: WorkOrderParticipant[]; // Historial de personas por las que ha pasado el trabajo
+  timer?: WorkOrderTimer; // Cronómetro de trabajo (opcional)
 }
 
 export type NotificationType =
