@@ -53,6 +53,31 @@ export interface PdfAttachment {
   uploadedAt: string;
 }
 
+export type WorkOrderActionType =
+  | 'creacion' // Creación inicial de la orden por el administrador
+  | 'asignacion' // Asignación o pase a un operario
+  | 'cambio_departamento' // Cambio de departamento técnico
+  | 'cambio_estado' // Modificación del estado de avance
+  | 'intervencion' // Actualización de notas, alertas o detalles
+  | 'pase_trabajo'; // Pase formal de trabajo entre operarios
+
+export interface WorkOrderParticipant {
+  id: string;
+  userId: string;
+  userName: string;
+  userRole: UserRole;
+  action: WorkOrderActionType;
+  actionLabel: string; // Ej: "Creado por Administrador", "Pase de trabajo a Pedro Gómez", etc.
+  departmentId?: string;
+  departmentName?: string;
+  operatorId?: string;
+  operatorName?: string;
+  statusId?: string;
+  statusName?: string;
+  timestamp: string; // Fecha y hora ISO
+  notes?: string;
+}
+
 export interface WorkOrder {
   id: string;
   companyId: string;
@@ -69,6 +94,9 @@ export interface WorkOrder {
   createdAt: string; // Fecha de creación (automática o extraída de PDF)
   updatedAt: string;
   orderPosition?: number; // Posición bajo criterio de operarios para ordenación personalizada
+  createdById?: string; // ID del administrador que creó la orden
+  createdByName?: string; // Nombre del administrador creador
+  participantsHistory?: WorkOrderParticipant[]; // Historial de personas por las que ha pasado el trabajo
 }
 
 export type NotificationType =

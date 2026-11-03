@@ -129,6 +129,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 Entrega: {job.deliveryDate}
               </span>
             )}
+            <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 w-full pt-1 border-t border-slate-100">
+              <span className="text-indigo-600 font-bold">●</span>
+              <span>Creado por <strong className="text-slate-700">{job.createdByName || 'Administrador'}</strong></span>
+              {job.participantsHistory && job.participantsHistory.length > 1 && (
+                <span className="text-indigo-600 font-medium">· {job.participantsHistory.length} pases registrados</span>
+              )}
+            </span>
           </div>
 
           {/* Notes brief */}

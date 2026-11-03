@@ -19,6 +19,7 @@ import {
   SlidersHorizontal,
   RotateCcw,
   Check,
+  Users,
 } from 'lucide-react';
 
 interface JobsViewProps {
@@ -542,6 +543,17 @@ export const JobsView: React.FC<JobsViewProps> = ({
                         </div>
                       )}
                     </div>
+
+                    {/* Personas por las que ha pasado el trabajo */}
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+                      <Users className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span className="truncate">
+                        Creado por <strong className="text-slate-800">{job.createdByName || 'Administrador'}</strong>
+                        {job.participantsHistory && job.participantsHistory.length > 1 && (
+                          <span className="text-indigo-600 font-semibold"> · {job.participantsHistory.length} registros</span>
+                        )}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Notes snippet */}
@@ -600,6 +612,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
                   <th className="px-4 py-3">Entrega</th>
                   <th className="px-4 py-3">Departamento</th>
                   <th className="px-4 py-3">Operario</th>
+                  <th className="px-4 py-3">Personas</th>
                   <th className="px-4 py-3">Estado</th>
                   <th className="px-4 py-3">Alertas</th>
                   <th className="px-4 py-3">PDF</th>
@@ -679,6 +692,17 @@ export const JobsView: React.FC<JobsViewProps> = ({
 
                       <td className="px-4 py-3 whitespace-nowrap">
                         {assignedOp ? assignedOp.name : <span className="text-slate-400">Sin asignar</span>}
+                      </td>
+
+                      <td className="px-4 py-3 whitespace-nowrap text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-slate-800">{job.createdByName || 'Admin'}</span>
+                          {job.participantsHistory && job.participantsHistory.length > 1 && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-bold text-[10px] border border-indigo-100" title="Historial de pases">
+                              +{job.participantsHistory.length - 1}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="px-4 py-3 whitespace-nowrap">

@@ -18,6 +18,8 @@ import {
   Sparkles,
   Loader2,
   Eye,
+  Users,
+  Clock,
 } from 'lucide-react';
 
 interface JobModalProps {
@@ -43,6 +45,9 @@ export const JobModal: React.FC<JobModalProps> = ({
     deleteWorkOrder,
     uploadJobPdf,
     deleteJobPdf,
+    getJobParticipants,
+    getDepartmentName,
+    getStatus,
   } = useApp();
 
   const isCreating = !job;
@@ -319,6 +324,71 @@ export const JobModal: React.FC<JobModalProps> = ({
     setShowDeleteConfirm(false);
     onClose();
   };
+
+  const formatHistoryDate = (isoStr: string) => {
+    if (!isoStr) return '-';
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      return d.toLocaleString('es-ES', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return isoStr;
+    }
+  };
+
+  const participantsList = job ? getJobParticipants(job) : [];
+
+  // 1. Administrador que lo creó y fecha
+  const creatorEntry = participantsList.find(
+    (p) => p.action === 'creacion' || p.userRole === 'administrador'
+  );
+  const adminCreatorName = isCreating
+    ? currentUser.name
+    : creatorEntry?.userName || job?.createdByName || 'Administrador';
+  const adminCreatorDate = isCreating
+    ? formatHistoryDate(new Date().toISOString())
+    : formatHistoryDate(creatorEntry?.timestamp || job?.createdAt || '');
+
+  // 2. Operarios por los que ha pasado (nombre y fecha en la que se le asignó el trabajo)
+  const rawOpHistory = participantsList.filter(
+    (p) => p.action === 'asignacion' || p.action === 'pase_trabajo' || (p.operatorName && p.action !== 'creacion')
+  );
+
+  let operatorAssignments: { name: string; date: string; isCurrent?: boolean }[] = [];
+
+  if (isCreating) {
+    if (assignedOperatorId) {
+      const op = users.find((u) => u.id === assignedOperatorId);
+      operatorAssignments = [
+        {
+          name: op?.name || 'Operario asignado',
+          date: 'Se registrará al crear el trabajo',
+          isCurrent: true,
+        },
+      ];
+    }
+  } else if (rawOpHistory.length > 0) {
+    operatorAssignments = rawOpHistory.map((p, idx) => ({
+      name: p.operatorName || p.userName || 'Operario',
+      date: formatHistoryDate(p.timestamp),
+      isCurrent: idx === rawOpHistory.length - 1,
+    }));
+  } else if (job?.assignedOperatorId) {
+    const op = users.find((u) => u.id === job.assignedOperatorId);
+    operatorAssignments = [
+      {
+        name: op?.name || 'Operario asignado',
+        date: formatHistoryDate(job.createdAt),
+        isCurrent: true,
+      },
+    ];
+  }
 
   const currentAttachment = attachedPdf || job?.pdfAttachment;
 
@@ -783,6 +853,64 @@ export const JobModal: React.FC<JobModalProps> = ({
                   : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
               }`}
             />
+          </div>
+
+          {/* ========================================================== */}
+          {/* SECCIÓN INFORMATIVA: HISTORIAL DE CREADOR Y OPERARIOS */}
+          {/* ========================================================== */}
+          <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 shadow-2xs space-y-2">
+            <div className="flex items-center justify-between border-b border-slate-200/70 pb-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                <Clock className="w-3.5 h-3.5 text-slate-500" />
+                <span>Historial de asignaciones</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium">Informativo</span>
+            </div>
+
+            {/* Administrador que lo creó */}
+            <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
+              <span className="text-slate-500 font-medium">Creado por (Administrador):</span>
+              <span className="font-semibold text-slate-800">
+                {adminCreatorName}{' '}
+                <span className="text-slate-400 font-normal">· {adminCreatorDate}</span>
+              </span>
+            </div>
+
+            {/* Operarios por los que ha pasado */}
+            <div className="pt-1.5 border-t border-slate-200/60">
+              <span className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Operarios por los que ha pasado:
+              </span>
+
+              {operatorAssignments.length === 0 ? (
+                <p className="text-xs text-slate-400 italic py-0.5">
+                  Sin operarios asignados hasta el momento.
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {operatorAssignments.map((op, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-white border border-slate-200 text-xs"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-semibold text-slate-800 truncate">
+                          {op.name}
+                        </span>
+                        {op.isCurrent && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                            Actual
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-slate-500 font-mono shrink-0 ml-2">
+                        {op.date}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

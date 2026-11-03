@@ -7,6 +7,7 @@ import {
   JobStatus,
   WorkOrder,
   WorkAlert,
+  WorkOrderParticipant,
   AppNotification,
   NavigationItemKey,
 } from '../types';
@@ -112,6 +113,13 @@ interface AppContextType {
   getDepartmentName: (id: string) => string;
   getStatus: (id: string) => JobStatus | undefined;
   getUser: (id: string) => User | undefined;
+  getJobParticipants: (job: WorkOrder) => WorkOrderParticipant[];
+  transferWorkOrder: (
+    workOrderId: string,
+    targetOperatorId: string,
+    targetDepartmentId?: string,
+    transferNote?: string
+  ) => { success: boolean; error?: string };
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -827,8 +835,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ==========================================
-  // WORK ORDERS LOGIC
+  // WORK ORDERS LOGIC & TRACEABILITY
   // ==========================================
+  /**
+   * Returns the complete chain of custody / people who have handled the work order,
+   * starting from the creator administrator through all successive operators.
+   */
+  const getJobParticipants = (job: WorkOrder): WorkOrderParticipant[] => {
+    if (job.participantsHistory && job.participantsHistory.length > 0) {
+      return job.participantsHistory;
+    }
+
+    const list: WorkOrderParticipant[] = [];
+    const creatorName = job.createdByName || 'Administrador';
+    const deptName = getDepartmentName(job.departmentId);
+    const statName = getStatus(job.statusId)?.name || 'Pendiente';
+
+    // 1. Initial creation by administrator
+    list.push({
+      id: `part-create-${job.id}`,
+      userId: job.createdById || 'admin',
+      userName: creatorName,
+      userRole: 'administrador',
+      action: 'creacion',
+      actionLabel: `Creó la orden de trabajo (${creatorName} - Administrador)`,
+      departmentId: job.departmentId,
+      departmentName: deptName,
+      statusId: job.statusId,
+      statusName: statName,
+      timestamp: job.createdAt || new Date().toISOString(),
+      notes: 'Alta y apertura inicial de la orden de trabajo',
+    });
+
+    // 2. Initial assigned operator (if any)
+    if (job.assignedOperatorId) {
+      const op = allUsers.find((u) => u.id === job.assignedOperatorId);
+      const opName = op?.name || 'Operario asignado';
+      list.push({
+        id: `part-assign-${job.id}`,
+        userId: job.assignedOperatorId,
+        userName: opName,
+        userRole: op?.role || 'operario',
+        action: 'asignacion',
+        actionLabel: `Pase de trabajo / Asignado a ${opName}`,
+        operatorId: job.assignedOperatorId,
+        operatorName: opName,
+        departmentId: job.departmentId,
+        departmentName: deptName,
+        statusId: job.statusId,
+        statusName: statName,
+        timestamp: job.createdAt || new Date().toISOString(),
+        notes: `Asignado como responsable de la orden`,
+      });
+    }
+
+    return list;
+  };
+
   const createWorkOrder = (
     data: Omit<WorkOrder, 'id' | 'companyId' | 'updatedAt' | 'alerts'> & { initialAlert?: string; createdAt?: string }
   ) => {
@@ -851,6 +914,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const currentCompanyJobs = allWorkOrders.filter((w) => w.companyId === companyId);
     const initialOrderPosition = data.orderPosition ?? currentCompanyJobs.length;
 
+    // Build the initial people traceability trail starting from creator Administrator
+    const creationTime = data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString();
+    const deptName = getDepartmentName(data.departmentId);
+    const statName = getStatus(data.statusId || statuses[0]?.id || '')?.name || 'Pendiente';
+
+    const initialParticipants: WorkOrderParticipant[] = [
+      {
+        id: `part-${Date.now()}-creator`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'creacion',
+        actionLabel: `Creó la orden de trabajo (${currentUser.name} - Administrador)`,
+        departmentId: data.departmentId,
+        departmentName: deptName,
+        statusId: data.statusId || statuses[0]?.id || '',
+        statusName: statName,
+        timestamp: creationTime,
+        notes: 'Alta y apertura inicial de la orden de trabajo por el administrador',
+      },
+    ];
+
+    if (data.assignedOperatorId) {
+      const assignedOp = allUsers.find((u) => u.id === data.assignedOperatorId);
+      const opName = assignedOp?.name || 'Operario asignado';
+      initialParticipants.push({
+        id: `part-${Date.now()}-op`,
+        userId: data.assignedOperatorId,
+        userName: opName,
+        userRole: assignedOp?.role || 'operario',
+        action: 'asignacion',
+        actionLabel: `Pase de trabajo / Asignado a ${opName}`,
+        operatorId: data.assignedOperatorId,
+        operatorName: opName,
+        departmentId: data.departmentId,
+        departmentName: deptName,
+        statusId: data.statusId || statuses[0]?.id || '',
+        statusName: statName,
+        timestamp: new Date().toISOString(),
+        notes: `Asignado inicialmente por el administrador ${currentUser.name}`,
+      });
+    }
+
     const newOrder: WorkOrder = {
       id: `wo-${Date.now()}`,
       companyId,
@@ -864,9 +970,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       alerts: initialAlerts,
       notes: data.notes || '',
       pdfAttachment: data.pdfAttachment,
-      createdAt: data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString(),
+      createdAt: creationTime,
       updatedAt: new Date().toISOString(),
       orderPosition: initialOrderPosition,
+      createdById: currentUser.id,
+      createdByName: currentUser.name,
+      participantsHistory: initialParticipants,
     };
 
     setAllWorkOrders((prev) => [newOrder, ...prev]);
@@ -918,6 +1027,126 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       delete finalUpdates.ot;
       delete finalUpdates.client;
       delete finalUpdates.deliveryDate;
+    }
+
+    // Build or inherit people traceability history
+    const baseHistory: WorkOrderParticipant[] =
+      existing.participantsHistory && existing.participantsHistory.length > 0
+        ? [...existing.participantsHistory]
+        : getJobParticipants(existing);
+
+    const newHistoryEntries: WorkOrderParticipant[] = [];
+    const nowIso = new Date().toISOString();
+    const effectiveDeptId = updates.departmentId || existing.departmentId;
+    const effectiveDeptName = getDepartmentName(effectiveDeptId);
+    const effectiveStatusId = updates.statusId || existing.statusId;
+    const effectiveStatusName = getStatus(effectiveStatusId)?.name || 'Pendiente';
+
+    // 1. Did the assigned operator change? (Pase de trabajo entre operarios / admin)
+    if (updates.assignedOperatorId !== undefined && updates.assignedOperatorId !== existing.assignedOperatorId) {
+      if (updates.assignedOperatorId) {
+        const newOp = allUsers.find((u) => u.id === updates.assignedOperatorId);
+        const newOpName = newOp?.name || 'Operario';
+        newHistoryEntries.push({
+          id: `part-${Date.now()}-op-${Math.random().toString(36).substring(2, 5)}`,
+          userId: updates.assignedOperatorId,
+          userName: newOpName,
+          userRole: newOp?.role || 'operario',
+          action: 'pase_trabajo',
+          actionLabel: `Pase de trabajo a ${newOpName} (por ${currentUser.name})`,
+          operatorId: updates.assignedOperatorId,
+          operatorName: newOpName,
+          departmentId: effectiveDeptId,
+          departmentName: effectiveDeptName,
+          statusId: effectiveStatusId,
+          statusName: effectiveStatusName,
+          timestamp: nowIso,
+          notes: `Pase de trabajo efectuado por ${currentUser.name} (${currentUser.role === 'administrador' ? 'Administrador' : 'Operario'})`,
+        });
+      } else {
+        newHistoryEntries.push({
+          id: `part-${Date.now()}-unassign-${Math.random().toString(36).substring(2, 5)}`,
+          userId: currentUser.id,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'intervencion',
+          actionLabel: `Puesto en espera sin operario asignado por ${currentUser.name}`,
+          departmentId: effectiveDeptId,
+          departmentName: effectiveDeptName,
+          statusId: effectiveStatusId,
+          statusName: effectiveStatusName,
+          timestamp: nowIso,
+          notes: `Desasignado por ${currentUser.name}`,
+        });
+      }
+    }
+
+    // 2. Did the department change?
+    if (updates.departmentId !== undefined && updates.departmentId !== existing.departmentId) {
+      const newDeptName = getDepartmentName(updates.departmentId);
+      newHistoryEntries.push({
+        id: `part-${Date.now()}-dept-${Math.random().toString(36).substring(2, 5)}`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'cambio_departamento',
+        actionLabel: `Trasladado al departamento "${newDeptName}" por ${currentUser.name}`,
+        departmentId: updates.departmentId,
+        departmentName: newDeptName,
+        statusId: effectiveStatusId,
+        statusName: effectiveStatusName,
+        timestamp: nowIso,
+        notes: `Cambio de departamento técnico`,
+      });
+    }
+
+    // 3. Did the status change?
+    if (updates.statusId !== undefined && updates.statusId !== existing.statusId) {
+      const newStatusName = getStatus(updates.statusId)?.name || 'Nuevo estado';
+      newHistoryEntries.push({
+        id: `part-${Date.now()}-stat-${Math.random().toString(36).substring(2, 5)}`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'cambio_estado',
+        actionLabel: `Estado actualizado a "${newStatusName}" por ${currentUser.name}`,
+        departmentId: effectiveDeptId,
+        departmentName: effectiveDeptName,
+        statusId: updates.statusId,
+        statusName: newStatusName,
+        timestamp: nowIso,
+        notes: `Cambio de estado de la orden`,
+      });
+    }
+
+    // 4. If neither op, dept, nor status changed, but notes or other fields were saved:
+    if (newHistoryEntries.length === 0) {
+      const lastEntry = baseHistory[baseHistory.length - 1];
+      const isRecentSameUser =
+        lastEntry &&
+        lastEntry.userId === currentUser.id &&
+        new Date(nowIso).getTime() - new Date(lastEntry.timestamp).getTime() < 120000;
+
+      if (!isRecentSameUser) {
+        newHistoryEntries.push({
+          id: `part-${Date.now()}-act-${Math.random().toString(36).substring(2, 5)}`,
+          userId: currentUser.id,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'intervencion',
+          actionLabel: `Intervención y seguimiento por ${currentUser.name}`,
+          departmentId: effectiveDeptId,
+          departmentName: effectiveDeptName,
+          statusId: effectiveStatusId,
+          statusName: effectiveStatusName,
+          timestamp: nowIso,
+          notes: 'Actualización de notas o detalles técnicos',
+        });
+      }
+    }
+
+    if (newHistoryEntries.length > 0) {
+      finalUpdates.participantsHistory = [...baseHistory, ...newHistoryEntries];
     }
 
     // Status change notifications
@@ -980,6 +1209,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     fsUpdate('workOrders', id, finalUpdates);
 
     return { success: true };
+  };
+
+  /**
+   * Explicitly passes or reassigns a work order to another operator or department,
+   * adding an optional handover note and recording the transition in the custody trail.
+   */
+  const transferWorkOrder = (
+    workOrderId: string,
+    targetOperatorId: string,
+    targetDepartmentId?: string,
+    transferNote?: string
+  ) => {
+    const existing = allWorkOrders.find((w) => w.id === workOrderId);
+    if (!existing) return { success: false, error: 'Trabajo no encontrado.' };
+
+    const updates: Partial<WorkOrder> = {
+      assignedOperatorId: targetOperatorId,
+    };
+    if (targetDepartmentId) {
+      updates.departmentId = targetDepartmentId;
+    }
+    if (transferNote && transferNote.trim()) {
+      const targetOp = allUsers.find((u) => u.id === targetOperatorId);
+      const noteHeader = `[Pase a ${targetOp?.name || 'operario'} por ${currentUser?.name}]: `;
+      const existingNotes = existing.notes ? `${existing.notes}\n\n` : '';
+      updates.notes = `${existingNotes}${noteHeader}${transferNote.trim()}`;
+    }
+
+    return updateWorkOrder(workOrderId, updates);
   };
 
   const deleteWorkOrder = (id: string) => {
@@ -1522,6 +1780,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getDepartmentName,
         getStatus,
         getUser,
+        getJobParticipants,
+        transferWorkOrder,
       }}
     >
       {children}
