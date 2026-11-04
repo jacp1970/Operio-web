@@ -1,0 +1,59 @@
+name: Compilar y Desplegar en GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+# Permisos requeridos para desplegar en GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Permite un solo despliegue concurrente para evitar conflictos
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  # Trabajo de compilación (Build)
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código (Checkout)
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci || npm install
+
+      - name: Compilar aplicación (Vite Build)
+        run: npm run build
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v4
+
+      - name: Subir artefacto de compilación
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+  # Trabajo de despliegue (Deploy)
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Desplegar a GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
