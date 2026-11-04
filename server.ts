@@ -20,6 +20,20 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', clientSideParsing: true });
 });
 
+// Explicit static handlers for public assets and icon fallbacks
+app.use(express.static(path.resolve(__dirname, 'public')));
+app.use('/assets', express.static(path.resolve(__dirname, 'public', 'assets')));
+
+// Direct fallbacks for icon requests from any relative subpath
+app.get(['*/operio_icon.png', '*/assets/aistudio/operio_icon.png'], (_req, res) => {
+  res.sendFile(path.resolve(__dirname, 'public', 'assets', 'aistudio', 'operio_icon.png'));
+});
+
+// If client requests /main.tsx, rewrite to /src/main.tsx
+app.get('/main.tsx', (_req, res) => {
+  res.redirect('/src/main.tsx');
+});
+
 // Vite Middleware for development or static build for production
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
