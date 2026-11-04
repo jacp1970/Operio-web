@@ -29,9 +29,12 @@ app.get(['*/operio_icon.png', '*/assets/aistudio/operio_icon.png'], (_req, res) 
   res.sendFile(path.resolve(__dirname, 'public', 'assets', 'aistudio', 'operio_icon.png'));
 });
 
-// If client requests /main.tsx, rewrite to /src/main.tsx
-app.get('/main.tsx', (_req, res) => {
-  res.redirect('/src/main.tsx');
+// Transparent internal rewrite for /main.tsx to /src/main.tsx (no 302 redirect)
+app.use((req, _res, next) => {
+  if (req.path === '/main.tsx' || req.path === '/main.js') {
+    req.url = req.url.replace(/^\/main\.(tsx|js)/, '/src/main.tsx');
+  }
+  next();
 });
 
 // Vite Middleware for development or static build for production
