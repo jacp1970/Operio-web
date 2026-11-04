@@ -30,6 +30,7 @@ import {
   Pause,
   RotateCcw,
   History,
+  Square,
 } from 'lucide-react';
 
 interface JobModalProps {
@@ -63,7 +64,10 @@ export const JobModal: React.FC<JobModalProps> = ({
   const isCreating = !job;
   const isAdmin = currentUser?.role === 'administrador';
   const isOperario = currentUser?.role === 'operario';
+  const isAdministrativo = currentUser?.role === 'administrativo';
   const isReadOnly = currentUser?.role === 'solo_lectura';
+  const canCreateJob = isAdmin || isAdministrativo;
+  const canEditCoreFields = isAdmin || (isCreating && isAdministrativo);
 
   // Form fields
   const [ot, setOt] = useState('');
@@ -122,7 +126,7 @@ export const JobModal: React.FC<JobModalProps> = ({
       setClient('');
       setCreatedAt(new Date().toISOString().slice(0, 10)); // Generada automáticamente
       setDeliveryDate('');
-      const defaultOp = users.find((u) => u.role === 'operario')?.id || '';
+      const defaultOp = users.find((u) => u.role === 'operario' || u.role === 'administrativo')?.id || '';
       setAssignedOperatorId(defaultOp);
       setDepartmentId(departments[0]?.id || '');
       setStatusId(statuses[0]?.id || '');
@@ -357,8 +361,8 @@ export const JobModal: React.FC<JobModalProps> = ({
     setIsSaving(true);
 
     if (isCreating) {
-      if (!isAdmin) {
-        setErrorMessage('Solo el administrador puede crear trabajos.');
+      if (!canCreateJob) {
+        setErrorMessage('Solo los administradores o administrativos pueden crear trabajos.');
         setIsSaving(false);
         return;
       }
@@ -570,6 +574,13 @@ export const JobModal: React.FC<JobModalProps> = ({
             </div>
           )}
 
+          {isAdministrativo && !isCreating && (
+            <div className="p-3 bg-blue-50/80 border border-blue-200/70 rounded-xl text-xs text-blue-800 flex items-center gap-2">
+              <span className="font-bold">Permisos de Administrativo:</span>
+              Mismos accesos que un operario (cambiar operario, departamento, alertas, notas y cronómetro) más la creación de órdenes de trabajo.
+            </div>
+          )}
+
           {isReadOnly && (
             <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-800 flex items-center gap-2">
               <Lock className="w-4 h-4 shrink-0" />
@@ -650,7 +661,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                   Adjunta el archivo en formato PDF. Al subirlo, la aplicación identificará los datos del trabajo y autorellenará la orden automáticamente. Si no dispones de PDF, puedes rellenar todos los campos manualmente.
                 </p>
 
-                {isAdmin && (
+                {(isAdmin || (isCreating && canCreateJob)) && (
                   <div className="pt-1">
                     <button
                       type="button"
@@ -682,12 +693,12 @@ export const JobModal: React.FC<JobModalProps> = ({
               </label>
               <input
                 type="text"
-                disabled={!isAdmin}
+                disabled={!canEditCoreFields}
                 value={ot}
                 onChange={(e) => setOt(e.target.value)}
                 placeholder="Ej. OT-2026-101"
                 className={`w-full text-sm font-mono font-semibold px-3.5 py-2.5 rounded-xl border ${
-                  !isAdmin
+                  !canEditCoreFields
                     ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
                     : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
                 }`}
@@ -700,12 +711,12 @@ export const JobModal: React.FC<JobModalProps> = ({
               </label>
               <input
                 type="text"
-                disabled={!isAdmin}
+                disabled={!canEditCoreFields}
                 value={client}
                 onChange={(e) => setClient(e.target.value)}
                 placeholder="Nombre de la empresa o cliente"
                 className={`w-full text-sm px-3.5 py-2.5 rounded-xl border ${
-                  !isAdmin
+                  !canEditCoreFields
                     ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
                     : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
                 }`}
@@ -724,11 +735,11 @@ export const JobModal: React.FC<JobModalProps> = ({
               </label>
               <input
                 type="date"
-                disabled={!isAdmin && !isOperario}
+                disabled={!isAdmin && !isOperario && !isAdministrativo}
                 value={createdAt}
                 onChange={(e) => setCreatedAt(e.target.value)}
                 className={`w-full text-sm px-3.5 py-2.5 rounded-xl border ${
-                  !isAdmin && !isOperario
+                  !isAdmin && !isOperario && !isAdministrativo
                     ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
                     : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
                 }`}
@@ -744,11 +755,11 @@ export const JobModal: React.FC<JobModalProps> = ({
               </label>
               <input
                 type="date"
-                disabled={!isAdmin}
+                disabled={!canEditCoreFields}
                 value={deliveryDate}
                 onChange={(e) => setDeliveryDate(e.target.value)}
                 className={`w-full text-sm px-3.5 py-2.5 rounded-xl border ${
-                  !isAdmin
+                  !canEditCoreFields
                     ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
                     : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
                 }`}
@@ -766,13 +777,13 @@ export const JobModal: React.FC<JobModalProps> = ({
             </label>
             <button
               type="button"
-              disabled={!isAdmin}
+              disabled={!canEditCoreFields}
               onClick={() => setIsUrgent(!isUrgent)}
               className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm font-bold transition-all ${
                 isUrgent
                   ? 'bg-rose-50 border-rose-300 text-rose-700 shadow-xs'
                   : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-              } ${!isAdmin ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
+              } ${!canEditCoreFields ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
             >
               <div className="flex items-center gap-2">
                 <Flame className={`w-4 h-4 ${isUrgent ? 'text-rose-600' : 'text-slate-400'}`} />
@@ -830,7 +841,7 @@ export const JobModal: React.FC<JobModalProps> = ({
               >
                 <option value="">-- Sin operario asignado --</option>
                 {users
-                  .filter((u) => u.role === 'operario' || u.role === 'administrador')
+                  .filter((u) => u.role === 'operario' || u.role === 'administrativo' || u.role === 'administrador')
                   .map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.name} ({u.role})
@@ -888,7 +899,11 @@ export const JobModal: React.FC<JobModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-400">
-                    Solo contará el tiempo que marque el cronómetro para calcular la duración.
+                    {timer?.isRunning
+                      ? 'Cronómetro en marcha. Pulsa "Pausar" para pausar el conteo o "Detener" para finalizar.'
+                      : liveElapsedSeconds > 0
+                      ? 'Cronómetro en pausa. Pulsa "Reanudar" para continuar o "Poner a cero" para reiniciar.'
+                      : 'Solo contará el tiempo que marque el cronómetro para calcular la duración.'}
                   </p>
                 </div>
               </div>
@@ -944,55 +959,89 @@ export const JobModal: React.FC<JobModalProps> = ({
               {!isReadOnly && (
                 <div className="flex flex-wrap items-center gap-2">
                   {timer?.isRunning ? (
-                    <button
-                      type="button"
-                      onClick={handlePauseTimer}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
-                    >
-                      <Pause className="w-4 h-4 fill-slate-950" />
-                      <span>Parar Cronómetro</span>
-                    </button>
+                    <>
+                      {/* Botón de Pausa principal */}
+                      <button
+                        type="button"
+                        onClick={handlePauseTimer}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
+                        title="Pausar el cronómetro (podrás reanudarlo cuando quieras)"
+                      >
+                        <Pause className="w-4 h-4 fill-slate-950" />
+                        <span>Pausar</span>
+                      </button>
+
+                      {/* Botón de Detener / Parar */}
+                      <button
+                        type="button"
+                        onClick={handlePauseTimer}
+                        className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/70 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-800/80 active:scale-95 text-xs font-semibold cursor-pointer shadow-sm transition-all"
+                        title="Detener y registrar el tramo de trabajo"
+                      >
+                        <Square className="w-3.5 h-3.5 fill-current" />
+                        <span>Detener</span>
+                      </button>
+                    </>
+                  ) : liveElapsedSeconds > 0 ? (
+                    <>
+                      {/* Botón Reanudar */}
+                      <button
+                        type="button"
+                        onClick={handleStartTimer}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
+                        title="Reanudar el cronómetro de trabajo"
+                      >
+                        <Play className="w-4 h-4 fill-slate-950" />
+                        <span>Reanudar</span>
+                      </button>
+
+                      {/* Indicador de Pausa */}
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs font-medium select-none">
+                        <Pause className="w-3.5 h-3.5" />
+                        <span>En Pausa</span>
+                      </span>
+
+                      {/* Botón Poner a cero */}
+                      {!showResetConfirm ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowResetConfirm(true)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold cursor-pointer border border-slate-700 transition-colors"
+                          title="Poner a 00:00:00"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Poner a cero</span>
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1.5 bg-rose-950/80 border border-rose-700/80 p-1.5 rounded-xl text-xs">
+                          <span className="text-[11px] text-rose-300 font-medium px-1">¿Resetear?</span>
+                          <button
+                            type="button"
+                            onClick={handleResetTimer}
+                            className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] cursor-pointer"
+                          >
+                            Sí
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowResetConfirm(false)}
+                            className="px-1.5 py-0.5 rounded text-slate-300 hover:text-white text-[11px] cursor-pointer"
+                          >
+                            No
+                          </button>
+                        </div>
+                      )}
+                    </>
                   ) : (
+                    /* Botón Iniciar cuando está en 00:00:00 */
                     <button
                       type="button"
                       onClick={handleStartTimer}
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
                     >
                       <Play className="w-4 h-4 fill-slate-950" />
-                      <span>{liveElapsedSeconds > 0 ? 'Reanudar Trabajo' : 'Iniciar Trabajo'}</span>
+                      <span>Iniciar Trabajo</span>
                     </button>
-                  )}
-
-                  {liveElapsedSeconds > 0 && !timer?.isRunning && (
-                    !showResetConfirm ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowResetConfirm(true)}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold cursor-pointer border border-slate-700 transition-colors"
-                        title="Poner a 00:00:00"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Poner a cero</span>
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-1.5 bg-rose-950/80 border border-rose-700/80 p-1.5 rounded-xl text-xs">
-                        <span className="text-[11px] text-rose-300 font-medium px-1">¿Resetear?</span>
-                        <button
-                          type="button"
-                          onClick={handleResetTimer}
-                          className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] cursor-pointer"
-                        >
-                          Sí
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowResetConfirm(false)}
-                          className="px-1.5 py-0.5 rounded text-slate-300 hover:text-white text-[11px] cursor-pointer"
-                        >
-                          No
-                        </button>
-                      </div>
-                    )
                   )}
                 </div>
               )}

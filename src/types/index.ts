@@ -1,4 +1,4 @@
-export type UserRole = 'administrador' | 'operario' | 'solo_lectura';
+export type UserRole = 'administrador' | 'operario' | 'administrativo' | 'solo_lectura';
 
 export interface Company {
   id: string;

@@ -474,13 +474,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }
 
   /* =========================================================================
-     OPERARIO VIEW
-     PDF: "El operario podrá visualizar:
-     - Sus trabajos activos asignados.
-     - Sus trabajos urgentes.
-     - Trabajos asignados a su departamento de otros operarios."
+     OPERARIO & ADMINISTRATIVO VIEW
      ========================================================================= */
-  if (currentUser.role === 'operario') {
+  if (currentUser.role === 'operario' || currentUser.role === 'administrativo') {
     // 1. Sus trabajos activos asignados
     const myActiveJobs = workOrders.filter(
       (wo) => wo.assignedOperatorId === currentUser.id && !isJobCompleted(wo)
@@ -498,19 +494,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         !isJobCompleted(wo)
     );
 
+    const isAdministrativo = currentUser.role === 'administrativo';
+
     return (
       <div className="space-y-6">
-        {/* Welcome Banner for Operario */}
-        <div className="bg-gradient-to-r from-emerald-50 via-white to-slate-50 p-6 rounded-3xl border border-emerald-100 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">
-            Panel de Operario · {currentUser.name}
-          </span>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
-            Tus Tareas y Partes de Trabajo Asignados
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Revisa tus órdenes asignadas, consulta especificaciones, actualiza notas o añade alertas técnicas.
-          </p>
+        {/* Welcome Banner for Operario / Administrativo */}
+        <div className={`bg-gradient-to-r ${isAdministrativo ? 'from-blue-50 via-white to-slate-50 border-blue-100' : 'from-emerald-50 via-white to-slate-50 border-emerald-100'} p-6 rounded-3xl border shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4`}>
+          <div>
+            <span className={`text-xs font-bold uppercase tracking-wider ${isAdministrativo ? 'text-blue-700' : 'text-emerald-700'}`}>
+              Panel de {isAdministrativo ? 'Administrativo' : 'Operario'} · {currentUser.name}
+            </span>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
+              Tus Tareas y Partes de Trabajo Asignados
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">
+              {isAdministrativo
+                ? 'Supervisa tus trabajos asignados, cronometra tramos o pulsa "+ Nuevo Trabajo" para dar de alta nuevas órdenes.'
+                : 'Revisa tus órdenes asignadas, consulta especificaciones, actualiza notas o añade alertas técnicas.'}
+            </p>
+          </div>
+
+          {isAdministrativo && (
+            <button
+              onClick={onOpenNewJobModal}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 shadow-sm transition-all shrink-0 cursor-pointer"
+            >
+              + Nuevo Trabajo
+            </button>
+          )}
         </div>
 
         {/* 3 Metric Cards matching PDF for Operario */}

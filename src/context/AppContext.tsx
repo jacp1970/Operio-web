@@ -895,8 +895,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const createWorkOrder = (
     data: Omit<WorkOrder, 'id' | 'companyId' | 'updatedAt' | 'alerts'> & { initialAlert?: string; createdAt?: string }
   ) => {
-    if (!currentUser || currentUser.role !== 'administrador' || !companyId) {
-      return { success: false, error: 'Solo el administrador puede crear nuevos trabajos.' };
+    if (!currentUser || (currentUser.role !== 'administrador' && currentUser.role !== 'administrativo') || !companyId) {
+      return { success: false, error: 'Solo los administradores o administrativos pueden crear nuevos trabajos.' };
     }
     if (!data.ot.trim()) return { success: false, error: 'El número de Orden de Trabajo (OT) es obligatorio.' };
     if (!data.client.trim()) return { success: false, error: 'El cliente es obligatorio.' };
@@ -914,10 +914,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const currentCompanyJobs = allWorkOrders.filter((w) => w.companyId === companyId);
     const initialOrderPosition = data.orderPosition ?? currentCompanyJobs.length;
 
-    // Build the initial people traceability trail starting from creator Administrator
+    // Build the initial people traceability trail starting from creator Administrator or Administrativo
     const creationTime = data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString();
     const deptName = getDepartmentName(data.departmentId);
     const statName = getStatus(data.statusId || statuses[0]?.id || '')?.name || 'Pendiente';
+    const creatorRoleLabel = currentUser.role === 'administrador' ? 'Administrador' : 'Administrativo';
 
     const initialParticipants: WorkOrderParticipant[] = [
       {
@@ -926,13 +927,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         userName: currentUser.name,
         userRole: currentUser.role,
         action: 'creacion',
-        actionLabel: `Creó la orden de trabajo (${currentUser.name} - Administrador)`,
+        actionLabel: `Creó la orden de trabajo (${currentUser.name} - ${creatorRoleLabel})`,
         departmentId: data.departmentId,
         departmentName: deptName,
         statusId: data.statusId || statuses[0]?.id || '',
         statusName: statName,
         timestamp: creationTime,
-        notes: 'Alta y apertura inicial de la orden de trabajo por el administrador',
+        notes: `Alta y apertura inicial de la orden de trabajo por ${currentUser.name} (${creatorRoleLabel})`,
       },
     ];
 
@@ -1024,7 +1025,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: new Date().toISOString(),
     };
 
-    if (currentUser.role === 'operario') {
+    if (currentUser.role === 'operario' || currentUser.role === 'administrativo') {
       delete finalUpdates.ot;
       delete finalUpdates.client;
       delete finalUpdates.deliveryDate;
@@ -1048,6 +1049,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (updates.assignedOperatorId) {
         const newOp = allUsers.find((u) => u.id === updates.assignedOperatorId);
         const newOpName = newOp?.name || 'Operario';
+        const roleDesc =
+          currentUser.role === 'administrador'
+            ? 'Administrador'
+            : currentUser.role === 'administrativo'
+            ? 'Administrativo'
+            : 'Operario';
         newHistoryEntries.push({
           id: `part-${Date.now()}-op-${Math.random().toString(36).substring(2, 5)}`,
           userId: updates.assignedOperatorId,
@@ -1062,7 +1069,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           statusId: effectiveStatusId,
           statusName: effectiveStatusName,
           timestamp: nowIso,
-          notes: `Pase de trabajo efectuado por ${currentUser.name} (${currentUser.role === 'administrador' ? 'Administrador' : 'Operario'})`,
+          notes: `Pase de trabajo efectuado por ${currentUser.name} (${roleDesc})`,
         });
       } else {
         newHistoryEntries.push({
@@ -1155,13 +1162,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const oldStatus = getStatus(existing.statusId)?.name || 'Anterior';
       const newStatus = getStatus(updates.statusId)?.name || 'Nuevo';
 
-      if (currentUser.role === 'operario') {
+      if (currentUser.role === 'operario' || currentUser.role === 'administrativo') {
+        const actorLabel = currentUser.role === 'administrativo' ? 'El administrativo' : 'El operario';
         sendNotification({
           userId: 'admin',
           workOrderId: existing.id,
           ot: existing.ot,
           title: `Cambio de estado en ${existing.ot}`,
-          message: `El operario ${currentUser.name} ha cambiado el estado de "${oldStatus}" a "${newStatus}" en la orden ${existing.ot}.`,
+          message: `${actorLabel} ${currentUser.name} ha cambiado el estado de "${oldStatus}" a "${newStatus}" en la orden ${existing.ot}.`,
           type: 'status_change',
         });
       } else if (currentUser.role === 'administrador') {
@@ -1368,13 +1376,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fsUpdate('workOrders', workOrderId, { alerts: updatedAlerts, updatedAt });
 
-    if (currentUser?.role === 'operario') {
+    if (currentUser?.role === 'operario' || currentUser?.role === 'administrativo') {
+      const actorLabel = currentUser.role === 'administrativo' ? 'El administrativo' : 'El operario';
       sendNotification({
         userId: 'admin',
         workOrderId: existing.id,
         ot: existing.ot,
         title: `Nueva alerta en ${existing.ot}`,
-        message: `El operario ${currentUser.name} ha reportado una alerta en ${existing.ot}: "${alertText.trim()}".`,
+        message: `${actorLabel} ${currentUser.name} ha reportado una alerta en ${existing.ot}: "${alertText.trim()}".`,
         type: 'alert_change',
       });
     } else if (currentUser?.role === 'administrador') {
@@ -1407,13 +1416,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fsUpdate('workOrders', workOrderId, { alerts: updatedAlerts, updatedAt });
 
-    if (currentUser?.role === 'operario' && removed) {
+    if ((currentUser?.role === 'operario' || currentUser?.role === 'administrativo') && removed) {
+      const actorLabel = currentUser.role === 'administrativo' ? 'El administrativo' : 'El operario';
       sendNotification({
         userId: 'admin',
         workOrderId: existing.id,
         ot: existing.ot,
         title: `Alerta resuelta en ${existing.ot}`,
-        message: `El operario ${currentUser.name} ha retirado la alerta: "${removed.text}".`,
+        message: `${actorLabel} ${currentUser.name} ha retirado la alerta: "${removed.text}".`,
         type: 'alert_change',
       });
     }
@@ -1671,7 +1681,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (currentUser.role === 'administrador') {
       return n.userId === 'admin' || n.userId === currentUser.id;
     }
-    if (currentUser.role === 'operario') {
+    if (currentUser.role === 'operario' || currentUser.role === 'administrativo') {
       return n.userId === currentUser.id;
     }
     return false;

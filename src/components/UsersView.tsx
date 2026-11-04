@@ -16,6 +16,7 @@ import {
   Building,
   Info,
   Sparkles,
+  FileText,
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -92,7 +93,14 @@ export const UsersView: React.FC = () => {
   };
 
   const generateSuggestionKey = () => {
-    const prefix = role === 'operario' ? 'OP' : role === 'solo_lectura' ? 'LEC' : 'ADM';
+    const prefix =
+      role === 'operario'
+        ? 'OP'
+        : role === 'administrativo'
+        ? 'ADM'
+        : role === 'solo_lectura'
+        ? 'LEC'
+        : 'ADMIN';
     const num = Math.floor(100 + Math.random() * 900);
     const suggested = `${prefix}-${num}`;
     setAccessKey(suggested);
@@ -188,6 +196,12 @@ export const UsersView: React.FC = () => {
         return (
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
             <Shield className="w-3 h-3 text-indigo-600" /> Administrador
+          </span>
+        );
+      case 'administrativo':
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+            <FileText className="w-3 h-3 text-blue-600" /> Administrativo
           </span>
         );
       case 'operario':
@@ -389,15 +403,22 @@ export const UsersView: React.FC = () => {
             )}
 
             <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-              {/* Rol: Administrador, operario o sólo lectura */}
+              {/* Rol: Administrador, Administrativo, Operario o Sólo lectura */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                   Rol de acceso *
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <button
                     type="button"
-                    onClick={() => setRole('operario')}
+                    onClick={() => {
+                      setRole('operario');
+                      if (!editingUserId) {
+                        const num = Math.floor(100 + Math.random() * 900);
+                        setAccessKey(`OP-${num}`);
+                        setAccessKeyConfirm(`OP-${num}`);
+                      }
+                    }}
                     className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
                       role === 'operario'
                         ? 'bg-emerald-50 border-emerald-500 text-emerald-700 ring-2 ring-emerald-200'
@@ -410,7 +431,34 @@ export const UsersView: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => setRole('solo_lectura')}
+                    onClick={() => {
+                      setRole('administrativo');
+                      if (!editingUserId) {
+                        const num = Math.floor(100 + Math.random() * 900);
+                        setAccessKey(`ADM-${num}`);
+                        setAccessKeyConfirm(`ADM-${num}`);
+                      }
+                    }}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                      role === 'administrativo'
+                        ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-200'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    <span>Administrativo</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRole('solo_lectura');
+                      if (!editingUserId) {
+                        const num = Math.floor(100 + Math.random() * 900);
+                        setAccessKey(`LEC-${num}`);
+                        setAccessKeyConfirm(`LEC-${num}`);
+                      }
+                    }}
                     className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
                       role === 'solo_lectura'
                         ? 'bg-amber-50 border-amber-500 text-amber-700 ring-2 ring-amber-200'
@@ -423,7 +471,14 @@ export const UsersView: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => setRole('administrador')}
+                    onClick={() => {
+                      setRole('administrador');
+                      if (!editingUserId) {
+                        const num = Math.floor(100 + Math.random() * 900);
+                        setAccessKey(`ADMIN-${num}`);
+                        setAccessKeyConfirm(`ADMIN-${num}`);
+                      }
+                    }}
                     className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
                       role === 'administrador'
                         ? 'bg-indigo-50 border-indigo-500 text-indigo-700 ring-2 ring-indigo-200'
@@ -434,6 +489,15 @@ export const UsersView: React.FC = () => {
                     <span>Administrador</span>
                   </button>
                 </div>
+
+                {role === 'administrativo' && (
+                  <p className="text-[11px] text-blue-800 bg-blue-50/80 border border-blue-200/80 p-2.5 rounded-xl mt-2 flex items-start gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Rol Administrativo:</strong> Mismos permisos que un operario (acceso por clave, visualización de trabajos, tramos de cronómetro, notas y alertas) <strong>más el poder crear nuevas órdenes de trabajo</strong>.
+                    </span>
+                  </p>
+                )}
               </div>
 
               {/* Nombre completo */}

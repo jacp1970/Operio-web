@@ -153,8 +153,8 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right: Quick Role Switcher, Notifications, and Action */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Create Job button for Administrator */}
-          {currentUser.role === 'administrador' && onOpenNewJobModal && (
+          {/* Create Job button for Administrator & Administrativo */}
+          {(currentUser.role === 'administrador' || currentUser.role === 'administrativo') && onOpenNewJobModal && (
             <button
               onClick={onOpenNewJobModal}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-indigo-600 text-white text-xs sm:text-sm font-semibold hover:bg-indigo-700 active:scale-95 transition-all shadow-xs cursor-pointer"
@@ -307,6 +307,8 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-xs sm:hidden font-semibold">
                 {currentUser.role === 'administrador'
                   ? 'Admin'
+                  : currentUser.role === 'administrativo'
+                  ? 'Admin.'
                   : currentUser.role === 'operario'
                   ? 'Operario'
                   : 'Lectura'}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { NavigationItemKey } from '../types';
+import { NavigationItemKey, UserRole } from '../types';
 import { Logo } from './Logo';
 import {
   LayoutDashboard,
@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   Wrench,
   Eye,
+  FileText,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -47,7 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
     label: string;
     icon: React.FC<{ className?: string }>;
     badge?: number;
-    roles: ('administrador' | 'operario' | 'solo_lectura')[];
+    roles: UserRole[];
   }
 
   const allMenuItems: MenuItem[] = [
@@ -55,13 +56,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
       key: 'panel_de_control',
       label: 'Panel de control',
       icon: LayoutDashboard,
-      roles: ['administrador', 'operario', 'solo_lectura'],
+      roles: ['administrador', 'operario', 'administrativo', 'solo_lectura'],
     },
     {
       key: 'trabajos',
       label: 'Trabajos',
       icon: ClipboardList,
-      roles: ['administrador', 'operario', 'solo_lectura'],
+      roles: ['administrador', 'operario', 'administrativo', 'solo_lectura'],
     },
     {
       key: 'departamentos',
@@ -86,13 +87,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
       label: 'Notificaciones',
       icon: Bell,
       badge: unreadNotificationsCount,
-      roles: ['administrador', 'operario'], // Operario receives notifications; solo_lectura has only panel, trabajos, cerrar sesión
+      roles: ['administrador', 'operario', 'administrativo'],
     },
     {
       key: 'cerrar_sesion',
       label: 'Cerrar sesión',
       icon: LogOut,
-      roles: ['administrador', 'operario', 'solo_lectura'],
+      roles: ['administrador', 'operario', 'administrativo', 'solo_lectura'],
     },
   ];
 
@@ -116,6 +117,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
         return (
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-2 py-0.5 rounded-full">
             <ShieldCheck className="w-3 h-3 text-indigo-600" /> Administrador
+          </span>
+        );
+      case 'administrativo':
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-full">
+            <FileText className="w-3 h-3 text-blue-600" /> Administrativo
           </span>
         );
       case 'operario':

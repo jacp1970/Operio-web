@@ -60,7 +60,9 @@ export const JobsView: React.FC<JobsViewProps> = ({
 
   const isAdmin = currentUser?.role === 'administrador';
   const isOperario = currentUser?.role === 'operario';
-  const canReorder = isAdmin || isOperario;
+  const isAdministrativo = currentUser?.role === 'administrativo';
+  const canCreate = isAdmin || isAdministrativo;
+  const canReorder = isAdmin || isOperario || isAdministrativo;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('todos');
@@ -295,11 +297,15 @@ export const JobsView: React.FC<JobsViewProps> = ({
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">
               Órdenes de Trabajo (OT)
             </h2>
-            {isAdmin && (
+            {isAdmin ? (
               <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[11px] font-bold border border-indigo-200">
                 Vista Administrador
               </span>
-            )}
+            ) : isAdministrativo ? (
+              <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[11px] font-bold border border-blue-200">
+                Vista Administrativo
+              </span>
+            ) : null}
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
             {sortedJobs.length} órdenes en vista
@@ -362,8 +368,8 @@ export const JobsView: React.FC<JobsViewProps> = ({
             <span className="hidden sm:inline">Colores</span>
           </button>
 
-          {/* New Work Order button (Admin only) */}
-          {isAdmin && (
+          {/* New Work Order button (Admin & Administrativo) */}
+          {canCreate && (
             <button
               onClick={onOpenNewJobModal}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs sm:text-sm font-bold hover:bg-indigo-700 active:scale-95 shadow-sm transition-all cursor-pointer"
@@ -800,7 +806,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
               ? 'Tu empresa está lista para empezar. Crea la primera orden de trabajo manual o subiendo un plano PDF.'
               : 'Prueba a modificar los filtros o el término de búsqueda.'}
           </p>
-          {isAdmin && (
+          {canCreate && (
             <button
               onClick={onOpenNewJobModal}
               className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 cursor-pointer"

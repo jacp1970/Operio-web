@@ -22,7 +22,7 @@
         "name": { "type": "string" },
         "email": { "type": "string" },
         "accessKey": { "type": "string" },
-        "role": { "type": "string", "enum": ["administrador", "operario", "solo_lectura"] },
+        "role": { "type": "string", "enum": ["administrador", "operario", "administrativo", "solo_lectura"] },
         "departmentIds": { "type": "array" },
         "createdAt": { "type": "string" }
       },

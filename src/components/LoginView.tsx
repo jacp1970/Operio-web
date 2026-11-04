@@ -190,7 +190,7 @@ export const LoginView: React.FC = () => {
                   }`}
                 >
                   <Wrench className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Operario / Lectura</span>
+                  <span>Operario / Administrativo</span>
                 </button>
 
                 <button
@@ -224,13 +224,13 @@ export const LoginView: React.FC = () => {
                 </div>
               )}
 
-              {/* TAB 1: OPERARIOS Y SOLO LECTURA (CÓDIGO DE EMPRESA + CLAVE, SIN CORREO) */}
+              {/* TAB 1: OPERARIOS, ADMINISTRATIVOS Y SOLO LECTURA (CÓDIGO DE EMPRESA + CLAVE, SIN CORREO) */}
               {loginRoleTab === 'user' && (
                 <form onSubmit={handleUserLoginSubmit} className="space-y-4">
                   <div className="p-3 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-emerald-900 mb-2">
                     <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
                     <span>
-                      Acceso exclusivo para operarios y personal de taller. No se requiere correo, solo el código de tu empresa y tu clave personal adjudicada.
+                      Acceso para operarios, administrativos y personal de taller. No se requiere correo, solo el código de tu empresa y tu clave personal adjudicada.
                     </span>
                   </div>
 
