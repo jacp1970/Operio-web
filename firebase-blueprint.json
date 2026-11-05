@@ -8,9 +8,10 @@
         "id": { "type": "string" },
         "code": { "type": "string" },
         "name": { "type": "string" },
+        "cif": { "type": "string" },
         "createdAt": { "type": "string" }
       },
-      "required": ["id", "code", "name", "createdAt"]
+      "required": ["id", "code", "name", "cif", "createdAt"]
     },
     "User": {
       "title": "User",

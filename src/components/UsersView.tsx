@@ -40,8 +40,6 @@ export const UsersView: React.FC = () => {
   const [name, setName] = useState('');
   const [accessKey, setAccessKey] = useState('');
   const [accessKeyConfirm, setAccessKeyConfirm] = useState('');
-  const [email, setEmail] = useState('');
-  const [emailConfirm, setEmailConfirm] = useState('');
   const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [copiedKeyUserId, setCopiedKeyUserId] = useState<string | null>(null);
@@ -61,8 +59,6 @@ export const UsersView: React.FC = () => {
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     setAccessKey(`OP-${randomSuffix}`);
     setAccessKeyConfirm(`OP-${randomSuffix}`);
-    setEmail('');
-    setEmailConfirm('');
     setSelectedDeptIds(departments.length > 0 ? [departments[0].id] : []);
     setErrorMsg('');
     setModalOpen(true);
@@ -74,8 +70,6 @@ export const UsersView: React.FC = () => {
     setName(user.name);
     setAccessKey(user.accessKey);
     setAccessKeyConfirm(user.accessKey);
-    setEmail(user.email || '');
-    setEmailConfirm(user.email || '');
     const validDeptIds = (user.departmentIds || []).filter((id) =>
       departments.some((d) => d.id === id)
     );
@@ -116,24 +110,21 @@ export const UsersView: React.FC = () => {
     }
 
     if (!accessKey.trim() || !accessKeyConfirm.trim()) {
-      setErrorMsg('Debes introducir la clave de acceso por partida doble.');
+      setErrorMsg(
+        role === 'administrador'
+          ? 'Debes introducir la contraseña por partida doble.'
+          : 'Debes introducir la clave de acceso por partida doble.'
+      );
       return;
     }
 
     if (accessKey.trim() !== accessKeyConfirm.trim()) {
-      setErrorMsg('Las dos claves de acceso no coinciden.');
+      setErrorMsg(
+        role === 'administrador'
+          ? 'Las dos contraseñas no coinciden.'
+          : 'Las dos claves de acceso no coinciden.'
+      );
       return;
-    }
-
-    if (role === 'administrador') {
-      if (!email.trim() || !emailConfirm.trim()) {
-        setErrorMsg('El correo electrónico es obligatorio para el administrador por partida doble.');
-        return;
-      }
-      if (email.trim().toLowerCase() !== emailConfirm.trim().toLowerCase()) {
-        setErrorMsg('Los dos correos electrónicos no coinciden.');
-        return;
-      }
     }
 
     if (editingUserId) {
@@ -141,7 +132,6 @@ export const UsersView: React.FC = () => {
         name: name.trim(),
         role,
         accessKey: accessKey.trim(),
-        email: role === 'administrador' ? email.trim().toLowerCase() : undefined,
         departmentIds: selectedDeptIds,
       });
 
@@ -155,8 +145,6 @@ export const UsersView: React.FC = () => {
         name: name.trim(),
         accessKey: accessKey.trim(),
         accessKeyConfirm: accessKeyConfirm.trim(),
-        email: role === 'administrador' ? email.trim().toLowerCase() : undefined,
-        emailConfirm: role === 'administrador' ? emailConfirm.trim().toLowerCase() : undefined,
         departmentIds: selectedDeptIds,
       });
 
@@ -233,7 +221,7 @@ export const UsersView: React.FC = () => {
             Gestión de Usuarios y Permisos
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Crea operarios adjudicando claves únicas. Los operarios acceden con el código de empresa y su clave (sin correo).
+            Gestión y asignación de claves de acceso y permisos por departamento para operarios y empleados.
           </p>
         </div>
 
@@ -244,14 +232,6 @@ export const UsersView: React.FC = () => {
           <Plus className="w-4 h-4" />
           <span>Añadir Usuario</span>
         </button>
-      </div>
-
-      {/* Info notice about credentials */}
-      <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 flex items-start gap-3 text-xs text-indigo-900">
-        <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-        <div>
-          <span className="font-bold">Política de acceso:</span> El correo electrónico es exclusivo para el administrador. Los operarios y lectores inician sesión introduciendo el <strong>Código de Empresa ({currentCompany?.code})</strong> y su <strong>Clave adjudicada</strong>.
-        </div>
       </div>
 
       {/* Grid of users */}
@@ -276,9 +256,11 @@ export const UsersView: React.FC = () => {
                     <div>
                       <h3 className="font-bold text-slate-900 text-sm">{u.name}</h3>
                       {isAdmin ? (
-                        <p className="text-xs text-indigo-600 font-medium">{u.email}</p>
+                        <p className="text-xs text-indigo-600 font-mono font-medium">
+                          CIF: {currentCompany?.cif || '-'}
+                        </p>
                       ) : (
-                        <p className="text-[11px] text-slate-400 font-medium">Sin correo · Acceso por clave</p>
+                        <p className="text-[11px] text-slate-400 font-medium font-mono">Clave: {u.accessKey}</p>
                       )}
                     </div>
                   </div>
@@ -514,7 +496,7 @@ export const UsersView: React.FC = () => {
                 />
               </div>
 
-              {/* Si es Operario o Sólo Lectura: NO email, sólo clave adjudicada */}
+              {/* Si es Operario, Administrativo o Sólo Lectura: clave adjudicada */}
               {role !== 'administrador' ? (
                 <div className="space-y-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80">
                   <div className="flex items-start justify-between gap-2">
@@ -523,8 +505,7 @@ export const UsersView: React.FC = () => {
                         Clave de acceso adjudicada
                       </span>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        El empleado iniciará sesión introduciendo el código de empresa (
-                        <strong className="text-slate-700">{currentCompany?.code}</strong>) y esta clave. Sin correo electrónico.
+                        Clave personal adjudicada al usuario para identificarse.
                       </p>
                     </div>
                     <button
@@ -566,44 +547,19 @@ export const UsersView: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                /* Si es Administrador: Correo electrónico por partida doble y contraseña */
+                /* Si es Administrador: Contraseña y datos vinculados a la empresa */
                 <div className="space-y-3 p-3.5 bg-indigo-50/50 rounded-2xl border border-indigo-100">
-                  <div className="text-xs text-indigo-900 font-semibold">
-                    Datos exclusivos de administrador (acceso con correo, contraseña y código de empresa):
+                  <div className="text-xs text-indigo-900 font-semibold flex items-center justify-between">
+                    <span>Contraseña de Administrador</span>
+                    <span className="font-mono text-[11px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                      CIF: {currentCompany?.cif || '-'}
+                    </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Correo electrónico *
-                      </label>
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="admin@empresa.com"
-                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Confirmar correo *
-                      </label>
-                      <input
-                        type="email"
-                        value={emailConfirm}
-                        onChange={(e) => setEmailConfirm(e.target.value)}
-                        placeholder="Repite el correo"
-                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Contraseña *
+                        Contraseña * (1/2)
                       </label>
                       <input
                         type="password"
@@ -616,7 +572,7 @@ export const UsersView: React.FC = () => {
 
                     <div>
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Confirmar contraseña *
+                        Confirmar contraseña * (2/2)
                       </label>
                       <input
                         type="password"

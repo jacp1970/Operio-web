@@ -330,7 +330,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </p>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {currentUser.role === 'administrador'
-                        ? currentUser.email
+                        ? (currentCompany?.cif ? `CIF: ${currentCompany.cif}` : 'Administrador')
                         : `Clave: ${currentUser.accessKey}`}
                     </p>
                     {currentCompany && (

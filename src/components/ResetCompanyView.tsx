@@ -166,7 +166,7 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
               </div>
               <h2 className="text-xl font-bold mt-1 text-white">{currentCompany.name}</h2>
               <p className="text-xs text-slate-300 mt-0.5">
-                Administrador en sesión: <span className="font-semibold text-white">{currentUser.name}</span> ({currentUser.email})
+                Administrador en sesión: <span className="font-semibold text-white">{currentUser.name}</span> (CIF: {currentCompany.cif || '-'})
               </p>
             </div>
           </div>

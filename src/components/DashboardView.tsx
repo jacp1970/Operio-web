@@ -382,7 +382,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           </div>
                           <div>
                             <h4 className="font-bold text-slate-800">{op.name}</h4>
-                            <p className="text-xs text-slate-400">{op.email}</p>
+                            <p className="text-xs text-slate-400 font-mono">Clave: {op.accessKey}</p>
                           </div>
                         </div>
 

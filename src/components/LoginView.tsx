@@ -6,11 +6,10 @@ import {
   UserPlus,
   Shield,
   Wrench,
-  Eye,
   CheckCircle2,
   AlertCircle,
   ArrowLeft,
-  Mail,
+  FileText,
   Lock,
   Building2,
   KeyRound,
@@ -38,9 +37,9 @@ export const LoginView: React.FC = () => {
   const [userCompanyCode, setUserCompanyCode] = useState('');
   const [userAccessKey, setUserAccessKey] = useState('');
 
-  // Login inputs - Administrator (Company Code + Email + Password)
+  // Login inputs - Administrator (Company Code + CIF/NIF + Password)
   const [adminCompanyCode, setAdminCompanyCode] = useState('');
-  const [adminEmail, setAdminEmail] = useState('');
+  const [adminCif, setAdminCif] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
 
   const [loginError, setLoginError] = useState('');
@@ -49,9 +48,9 @@ export const LoginView: React.FC = () => {
   const [regCompanyName, setRegCompanyName] = useState('');
   const [regCompanyCode, setRegCompanyCode] = useState('');
   const [regCompanyCodeConfirm, setRegCompanyCodeConfirm] = useState('');
+  const [regCif, setRegCif] = useState('');
+  const [regCifConfirm, setRegCifConfirm] = useState('');
   const [regAdminName, setRegAdminName] = useState('');
-  const [regAdminEmail, setRegAdminEmail] = useState('');
-  const [regAdminEmailConfirm, setRegAdminEmailConfirm] = useState('');
   const [regAdminPassword, setRegAdminPassword] = useState('');
   const [regAdminPasswordConfirm, setRegAdminPasswordConfirm] = useState('');
   const [regError, setRegError] = useState('');
@@ -59,7 +58,7 @@ export const LoginView: React.FC = () => {
 
   // Recovery inputs
   const [recCompanyCode, setRecCompanyCode] = useState('');
-  const [recAdminEmail, setRecAdminEmail] = useState('');
+  const [recCif, setRecCif] = useState('');
   const [recMessage, setRecMessage] = useState<{ text: string; success: boolean } | null>(null);
 
   const handleUserLoginSubmit = (e: React.FormEvent) => {
@@ -81,12 +80,12 @@ export const LoginView: React.FC = () => {
     e.preventDefault();
     setLoginError('');
 
-    if (!adminCompanyCode.trim() || !adminEmail.trim() || !adminPassword) {
-      setLoginError('Introduce el código de empresa, correo de administrador y contraseña.');
+    if (!adminCompanyCode.trim() || !adminCif.trim() || !adminPassword) {
+      setLoginError('Introduce el código de empresa, CIF/NIF de la empresa y contraseña.');
       return;
     }
 
-    const res = loginAdmin(adminCompanyCode, adminEmail, adminPassword);
+    const res = loginAdmin(adminCompanyCode, adminCif, adminPassword);
     if (!res.success) {
       setLoginError(res.error || 'Credenciales de administrador incorrectas.');
     }
@@ -101,9 +100,9 @@ export const LoginView: React.FC = () => {
       companyName: regCompanyName,
       companyCode: regCompanyCode,
       companyCodeConfirm: regCompanyCodeConfirm,
+      cif: regCif,
+      cifConfirm: regCifConfirm,
       adminName: regAdminName,
-      adminEmail: regAdminEmail,
-      adminEmailConfirm: regAdminEmailConfirm,
       adminPassword: regAdminPassword,
       adminPasswordConfirm: regAdminPasswordConfirm,
     });
@@ -116,7 +115,7 @@ export const LoginView: React.FC = () => {
       );
       setAdminCompanyCode(regCompanyCode.toUpperCase());
       setUserCompanyCode(regCompanyCode.toUpperCase());
-      setAdminEmail(regAdminEmail);
+      setAdminCif(regCif.toUpperCase());
       setAdminPassword(regAdminPassword);
 
       setTimeout(() => {
@@ -125,9 +124,9 @@ export const LoginView: React.FC = () => {
         setRegCompanyName('');
         setRegCompanyCode('');
         setRegCompanyCodeConfirm('');
+        setRegCif('');
+        setRegCifConfirm('');
         setRegAdminName('');
-        setRegAdminEmail('');
-        setRegAdminEmailConfirm('');
         setRegAdminPassword('');
         setRegAdminPasswordConfirm('');
       }, 2000);
@@ -138,12 +137,12 @@ export const LoginView: React.FC = () => {
     e.preventDefault();
     setRecMessage(null);
 
-    if (!recCompanyCode.trim() || !recAdminEmail.trim()) {
-      setRecMessage({ text: 'Introduce el código de empresa y el correo del administrador.', success: false });
+    if (!recCompanyCode.trim() || !recCif.trim()) {
+      setRecMessage({ text: 'Introduce el código de empresa y el CIF/NIF de la empresa.', success: false });
       return;
     }
 
-    const res = recoverAdminCredentials(recCompanyCode, recAdminEmail);
+    const res = recoverAdminCredentials(recCompanyCode, recCif);
     setRecMessage({ text: res.message, success: res.success });
   };
 
@@ -224,16 +223,9 @@ export const LoginView: React.FC = () => {
                 </div>
               )}
 
-              {/* TAB 1: OPERARIOS, ADMINISTRATIVOS Y SOLO LECTURA (CÓDIGO DE EMPRESA + CLAVE, SIN CORREO) */}
+              {/* TAB 1: OPERARIOS, ADMINISTRATIVOS Y SOLO LECTURA */}
               {loginRoleTab === 'user' && (
                 <form onSubmit={handleUserLoginSubmit} className="space-y-4">
-                  <div className="p-3 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-emerald-900 mb-2">
-                    <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                    <span>
-                      Acceso para operarios, administrativos y personal de taller. No se requiere correo, solo el código de tu empresa y tu clave personal adjudicada.
-                    </span>
-                  </div>
-
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                       Código de Empresa *
@@ -278,15 +270,9 @@ export const LoginView: React.FC = () => {
                 </form>
               )}
 
-              {/* TAB 2: ADMINISTRADOR (CÓDIGO DE EMPRESA + CORREO + CONTRASEÑA) */}
+              {/* TAB 2: ADMINISTRADOR */}
               {loginRoleTab === 'admin' && (
                 <form onSubmit={handleAdminLoginSubmit} className="space-y-4">
-                  <div className="p-3 bg-indigo-50/80 border border-indigo-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-indigo-900 mb-2">
-                    <Shield className="w-4 h-4 text-indigo-700 shrink-0 mt-0.5" />
-                    <span>
-                      Acceso exclusivo para el Administrador de la empresa (requiere código de empresa, correo y contraseña).
-                    </span>
-                  </div>
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -307,17 +293,17 @@ export const LoginView: React.FC = () => {
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Correo Electrónico del Administrador *
+                      CIF/NIF de la Empresa *
                     </label>
                     <div className="relative">
-                      <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <FileText className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                       <input
-                        type="email"
+                        type="text"
                         required
-                        value={adminEmail}
-                        onChange={(e) => setAdminEmail(e.target.value)}
-                        placeholder="admin@empresa.com"
-                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
+                        value={adminCif}
+                        onChange={(e) => setAdminCif(e.target.value.toUpperCase())}
+                        placeholder="Ej. B12345678 o 12345678Z"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold uppercase focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
                       />
                     </div>
                   </div>
@@ -332,7 +318,7 @@ export const LoginView: React.FC = () => {
                         onClick={() => {
                           setMode('recover');
                           setRecCompanyCode(adminCompanyCode);
-                          setRecAdminEmail(adminEmail);
+                          setRecCif(adminCif);
                           setRecMessage(null);
                         }}
                         className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
@@ -462,6 +448,36 @@ export const LoginView: React.FC = () => {
                       />
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        CIF/NIF de la Empresa * (1/2)
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regCif}
+                        onChange={(e) => setRegCif(e.target.value.toUpperCase())}
+                        placeholder="Ej. B12345678"
+                        className="w-full text-xs sm:text-sm font-mono font-bold px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500 uppercase"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Confirmar CIF/NIF * (2/2)
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={regCifConfirm}
+                        onChange={(e) => setRegCifConfirm(e.target.value.toUpperCase())}
+                        placeholder="Repite el CIF/NIF"
+                        className="w-full text-xs sm:text-sm font-mono font-bold px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500 uppercase"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {/* 2. Datos del administrador */}
@@ -483,36 +499,6 @@ export const LoginView: React.FC = () => {
                       placeholder="Ej. Nombre y Apellidos"
                       className="w-full text-xs sm:text-sm px-3.5 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
                     />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Correo Electrónico * (1/2)
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        value={regAdminEmail}
-                        onChange={(e) => setRegAdminEmail(e.target.value)}
-                        placeholder="admin@empresa.com"
-                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Confirmar Correo * (2/2)
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        value={regAdminEmailConfirm}
-                        onChange={(e) => setRegAdminEmailConfirm(e.target.value)}
-                        placeholder="Repite el correo"
-                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -583,7 +569,7 @@ export const LoginView: React.FC = () => {
                     Restaurar Contraseña de Administrador
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Introduce el código de empresa y tu correo de administrador.
+                    Introduce el código de empresa y el CIF/NIF de la empresa.
                   </p>
                 </div>
               </div>
@@ -617,15 +603,15 @@ export const LoginView: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Correo del Administrador *
+                    CIF/NIF de la Empresa *
                   </label>
                   <input
-                    type="email"
+                    type="text"
                     required
-                    value={recAdminEmail}
-                    onChange={(e) => setRecAdminEmail(e.target.value)}
-                    placeholder="admin@empresa.com"
-                    className="w-full text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                    value={recCif}
+                    onChange={(e) => setRecCif(e.target.value.toUpperCase())}
+                    placeholder="Ej. B12345678"
+                    className="w-full text-xs sm:text-sm font-mono font-bold uppercase px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
 

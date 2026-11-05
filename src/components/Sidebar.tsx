@@ -168,8 +168,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
               {currentUser.name}
             </span>
             {currentUser.role === 'administrador' ? (
-              <span className="text-xs text-slate-400 truncate mb-1">
-                {currentUser.email}
+              <span className="text-xs text-slate-400 font-mono truncate mb-1">
+                {currentCompany?.cif ? `CIF: ${currentCompany.cif}` : 'Administrador'}
               </span>
             ) : (
               <span className="text-[11px] font-mono text-indigo-600 font-bold truncate mb-1">

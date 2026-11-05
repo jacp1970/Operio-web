@@ -4,6 +4,7 @@ export interface Company {
   id: string;
   code: string; // Código de empresa único (alfanumérico en mayúsculas)
   name: string; // Nombre comercial de la empresa
+  cif: string; // CIF/NIF de la empresa
   createdAt: string;
 }
 

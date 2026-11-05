@@ -45,20 +45,20 @@ interface AppContextType {
   isFirebaseConnected: boolean;
 
   // Auth methods
-  loginAdmin: (companyCode: string, email: string, password: string) => { success: boolean; error?: string };
+  loginAdmin: (companyCode: string, cif: string, password: string) => { success: boolean; error?: string };
   loginUser: (companyCode: string, accessKey: string) => { success: boolean; error?: string };
   logout: () => void;
   registerAdminAndCompany: (data: {
     companyName: string;
     companyCode: string;
     companyCodeConfirm: string;
+    cif: string;
+    cifConfirm: string;
     adminName: string;
-    adminEmail: string;
-    adminEmailConfirm: string;
     adminPassword: string;
     adminPasswordConfirm: string;
   }) => { success: boolean; error?: string };
-  recoverAdminCredentials: (companyCode: string, email: string) => { success: boolean; message: string; temporaryPassword?: string };
+  recoverAdminCredentials: (companyCode: string, cif: string) => { success: boolean; message: string; temporaryPassword?: string };
   quickSwitchUser: (userId: string) => void;
   deleteCurrentCompany: () => Promise<{ success: boolean; error?: string }>;
   resetCurrentCompanyData: (options?: {
@@ -479,33 +479,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   /**
    * Administrator Login:
-   * Requires: Company Code + Admin Email + Password
+   * Requires: Company Code + Company CIF/NIF + Administrator Password
    */
-  const loginAdmin = (companyCode: string, email: string, password: string) => {
+  const loginAdmin = (companyCode: string, cif: string, password: string) => {
     const normCode = companyCode.trim().toUpperCase();
-    const normEmail = email.trim().toLowerCase();
+    const normCif = cif.trim().toUpperCase().replace(/[\s-]/g, '');
 
     const company = companies.find((c) => c.code.trim().toUpperCase() === normCode);
     if (!company) {
       return { success: false, error: `No se encuentra ninguna empresa con el código "${companyCode}".` };
     }
 
+    const companyCif = (company.cif || '').trim().toUpperCase().replace(/[\s-]/g, '');
+    if (companyCif && companyCif !== normCif) {
+      return {
+        success: false,
+        error: `El CIF/NIF "${cif.trim()}" no coincide con el registrado para la empresa ${company.name}.`,
+      };
+    }
+
     const adminUser = allUsers.find(
       (u) =>
         u.companyId === company.id &&
-        u.role === 'administrador' &&
-        u.email?.trim().toLowerCase() === normEmail
+        u.role === 'administrador'
     );
 
     if (!adminUser) {
       return {
         success: false,
-        error: `No existe ningún administrador con el correo "${email}" en la empresa ${company.name}.`,
+        error: `No existe ningún administrador registrado en la empresa ${company.name}.`,
       };
     }
 
     if (adminUser.accessKey !== password) {
-      return { success: false, error: 'La contraseña introducida es incorrecta.' };
+      return { success: false, error: 'La contraseña del administrador es incorrecta.' };
     }
 
     setCurrentUser(adminUser);
@@ -514,7 +521,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
-   * Employee / Operator / Solo Lectura Login:
+   * Employee / Operator / Administrativo / Solo Lectura Login:
    * Requires ONLY: Company Code + Personal Access Key
    */
   const loginUser = (companyCode: string, accessKey: string) => {
@@ -556,15 +563,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   /**
    * Register a new Administrator and Company:
-   * Sets up Company Code, Company Name, and Admin profile
+   * Sets up Company Code, Company Name, Company CIF/NIF, and Administrator Profile
    */
   const registerAdminAndCompany = (data: {
     companyName: string;
     companyCode: string;
     companyCodeConfirm: string;
+    cif: string;
+    cifConfirm: string;
     adminName: string;
-    adminEmail: string;
-    adminEmailConfirm: string;
     adminPassword: string;
     adminPasswordConfirm: string;
   }) => {
@@ -579,11 +586,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: `El código de empresa "${normCode}" ya está en uso. Por favor, elige otro.` };
     }
 
-    if (!data.adminName.trim()) return { success: false, error: 'Introduce el nombre del administrador.' };
-    if (!data.adminEmail.trim()) return { success: false, error: 'Introduce el correo electrónico.' };
-    if (data.adminEmail.trim().toLowerCase() !== data.adminEmailConfirm.trim().toLowerCase()) {
-      return { success: false, error: 'Los correos electrónicos introducidos no coinciden.' };
+    if (!data.cif.trim()) return { success: false, error: 'Introduce el CIF/NIF de la empresa.' };
+    const normCif = data.cif.trim().toUpperCase().replace(/[\s-]/g, '');
+    const normCifConfirm = data.cifConfirm.trim().toUpperCase().replace(/[\s-]/g, '');
+    if (normCif !== normCifConfirm) {
+      return { success: false, error: 'Los CIF/NIF introducidos no coinciden.' };
     }
+
+    if (companies.some((c) => (c.cif || '').trim().toUpperCase().replace(/[\s-]/g, '') === normCif)) {
+      return { success: false, error: `Ya existe una empresa registrada con el CIF/NIF "${data.cif.trim()}".` };
+    }
+
+    if (!data.adminName.trim()) return { success: false, error: 'Introduce el nombre del administrador.' };
     if (!data.adminPassword) return { success: false, error: 'Introduce la contraseña del administrador.' };
     if (data.adminPassword !== data.adminPasswordConfirm) {
       return { success: false, error: 'Las contraseñas del administrador no coinciden.' };
@@ -594,6 +608,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: newCompanyId,
       code: normCode,
       name: data.companyName.trim(),
+      cif: data.cif.trim().toUpperCase(),
       createdAt: new Date().toISOString(),
     };
 
@@ -617,7 +632,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `user-admin-${Date.now()}`,
       companyId: newCompanyId,
       name: data.adminName.trim(),
-      email: data.adminEmail.trim().toLowerCase(),
       accessKey: data.adminPassword,
       role: 'administrador',
       departmentIds: newDepts.map((d) => d.id),
@@ -641,26 +655,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
 
-  const recoverAdminCredentials = (companyCode: string, email: string) => {
+  const recoverAdminCredentials = (companyCode: string, cif: string) => {
     const normCode = companyCode.trim().toUpperCase();
-    const normEmail = email.trim().toLowerCase();
+    const normCif = cif.trim().toUpperCase().replace(/[\s-]/g, '');
 
     const company = companies.find((c) => c.code.toUpperCase() === normCode);
     if (!company) {
       return { success: false, message: `No encontramos ninguna empresa con el código "${companyCode}".` };
     }
 
+    const companyCif = (company.cif || '').trim().toUpperCase().replace(/[\s-]/g, '');
+    if (companyCif && companyCif !== normCif) {
+      return {
+        success: false,
+        message: `El CIF/NIF introducido no coincide con los datos registrados para la empresa ${company.name}.`,
+      };
+    }
+
     const adminUser = allUsers.find(
       (u) =>
         u.companyId === company.id &&
-        u.role === 'administrador' &&
-        u.email?.toLowerCase() === normEmail
+        u.role === 'administrador'
     );
 
     if (!adminUser) {
       return {
         success: false,
-        message: `No existe ningún administrador con el correo "${email}" en la empresa ${company.name}.`,
+        message: `No existe ningún administrador registrado en la empresa ${company.name}.`,
       };
     }
 
@@ -674,7 +695,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       success: true,
-      message: `Se ha restablecido la clave para ${adminUser.name} en ${company.name}. Tu clave provisional es: ${tempPass}`,
+      message: `Se ha restablecido la clave para el administrador (${adminUser.name}) de ${company.name}. Tu clave provisional es: ${tempPass}`,
       temporaryPassword: tempPass,
     };
   };
@@ -1615,15 +1636,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: 'Las dos claves de acceso no coinciden.' };
     }
 
-    if (data.role === 'administrador') {
-      if (!data.email || !data.emailConfirm) {
-        return { success: false, error: 'El correo electrónico es obligatorio para el administrador.' };
-      }
-      if (data.email.trim().toLowerCase() !== data.emailConfirm.trim().toLowerCase()) {
-        return { success: false, error: 'Los dos correos electrónicos no coinciden.' };
-      }
-    }
-
     // Check key uniqueness within this company
     const keyTrimmed = data.accessKey.trim();
     const existingWithKey = allUsers.find(
@@ -1643,7 +1655,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       accessKey: keyTrimmed,
       role: data.role,
       departmentIds: data.departmentIds,
-      email: data.role === 'administrador' ? data.email?.trim().toLowerCase() : undefined,
+      email: data.email ? data.email.trim().toLowerCase() : undefined,
       createdAt: new Date().toISOString(),
     };
 
