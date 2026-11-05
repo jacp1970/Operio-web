@@ -28,6 +28,7 @@ import {
   deleteDoc,
   onSnapshot,
 } from 'firebase/firestore';
+import { validateCifOrNif } from '../utils/cifValidation';
 
 interface AppContextType {
   currentUser: User | null;
@@ -59,6 +60,7 @@ interface AppContextType {
     adminPasswordConfirm: string;
   }) => { success: boolean; error?: string };
   recoverAdminCredentials: (companyCode: string, cif: string) => { success: boolean; message: string; temporaryPassword?: string };
+  updateCompanyCif: (cif: string) => { success: boolean; error?: string };
   quickSwitchUser: (userId: string) => void;
   deleteCurrentCompany: () => Promise<{ success: boolean; error?: string }>;
   resetCurrentCompanyData: (options?: {
@@ -480,21 +482,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   /**
    * Administrator Login:
    * Requires: Company Code + Company CIF/NIF + Administrator Password
+   * El CIF/NIF es el identificador único que distingue a cada empresa.
    */
   const loginAdmin = (companyCode: string, cif: string, password: string) => {
-    const normCode = companyCode.trim().toUpperCase();
     const normCif = cif.trim().toUpperCase().replace(/[\s-]/g, '');
+    const normCode = companyCode.trim().toUpperCase();
 
-    const company = companies.find((c) => c.code.trim().toUpperCase() === normCode);
-    if (!company) {
-      return { success: false, error: `No se encuentra ninguna empresa con el código "${companyCode}".` };
+    if (!normCif) {
+      return { success: false, error: 'Introduce el CIF/NIF de la empresa.' };
     }
 
-    const companyCif = (company.cif || '').trim().toUpperCase().replace(/[\s-]/g, '');
-    if (companyCif && companyCif !== normCif) {
+    // Buscamos la empresa principalmente por CIF/NIF único
+    const company = companies.find(
+      (c) => (c.cif || '').trim().toUpperCase().replace(/[\s-]/g, '') === normCif
+    );
+    if (!company) {
       return {
         success: false,
-        error: `El CIF/NIF "${cif.trim()}" no coincide con el registrado para la empresa ${company.name}.`,
+        error: `No se encuentra ninguna empresa registrada con el CIF/NIF "${cif.trim()}".`,
+      };
+    }
+
+    // Si se introduce código de empresa, validamos que corresponda a esa empresa
+    if (normCode && company.code.trim().toUpperCase() !== normCode) {
+      return {
+        success: false,
+        error: `El código de empresa "${companyCode.trim()}" no corresponde a la empresa con CIF/NIF "${cif.trim()}".`,
       };
     }
 
@@ -523,6 +536,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   /**
    * Employee / Operator / Administrativo / Solo Lectura Login:
    * Requires ONLY: Company Code + Personal Access Key
+   * Dado que el código de empresa puede repetirse en varias empresas,
+   * se busca el usuario correspondiente en cualquiera de las empresas que compartan dicho código.
    */
   const loginUser = (companyCode: string, accessKey: string) => {
     const normCode = companyCode.trim().toUpperCase();
@@ -535,19 +550,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: 'Por favor, introduce tu clave de acceso.' };
     }
 
-    const company = companies.find((c) => c.code.trim().toUpperCase() === normCode);
-    if (!company) {
+    const matchingCompanies = companies.filter(
+      (c) => c.code.trim().toUpperCase() === normCode
+    );
+    if (matchingCompanies.length === 0) {
       return { success: false, error: `No se encuentra ninguna empresa con el código "${companyCode}".` };
     }
 
+    const matchingCompanyIds = matchingCompanies.map((c) => c.id);
     const matchedUser = allUsers.find(
-      (u) => u.companyId === company.id && u.accessKey.trim() === trimmedKey
+      (u) => matchingCompanyIds.includes(u.companyId) && u.accessKey.trim() === trimmedKey
     );
 
     if (!matchedUser) {
       return {
         success: false,
-        error: `La clave de acceso no corresponde a ningún usuario en la empresa ${company.name} (${company.code}).`,
+        error: `La clave de acceso no corresponde a ningún usuario en una empresa con código "${companyCode}".`,
       };
     }
 
@@ -564,6 +582,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   /**
    * Register a new Administrator and Company:
    * Sets up Company Code, Company Name, Company CIF/NIF, and Administrator Profile
+   * Tanto el nombre como el código de empresa PUEDEN estar repetidos.
+   * Lo que identifica de manera única a la empresa es el CIF/NIF con letra y 8 números.
    */
   const registerAdminAndCompany = (data: {
     companyName: string;
@@ -576,25 +596,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     adminPasswordConfirm: string;
   }) => {
     if (!data.companyName.trim()) return { success: false, error: 'Introduce el nombre de la empresa.' };
-    if (!data.companyCode.trim()) return { success: false, error: 'Introduce el código único de la empresa.' };
+    if (!data.companyCode.trim()) return { success: false, error: 'Introduce el código de la empresa.' };
     if (data.companyCode.trim().toUpperCase() !== data.companyCodeConfirm.trim().toUpperCase()) {
       return { success: false, error: 'Los dos códigos de empresa introducidos no coinciden.' };
     }
 
-    const normCode = data.companyCode.trim().toUpperCase();
-    if (companies.some((c) => c.code.toUpperCase() === normCode)) {
-      return { success: false, error: `El código de empresa "${normCode}" ya está en uso. Por favor, elige otro.` };
+    // Validación estricta de CIF / NIF (letra y 8 números / 8 números y letra)
+    const cifValidation = validateCifOrNif(data.cif);
+    if (!cifValidation.valid) {
+      return { success: false, error: cifValidation.error || 'CIF/NIF de empresa inválido.' };
     }
 
-    if (!data.cif.trim()) return { success: false, error: 'Introduce el CIF/NIF de la empresa.' };
-    const normCif = data.cif.trim().toUpperCase().replace(/[\s-]/g, '');
-    const normCifConfirm = data.cifConfirm.trim().toUpperCase().replace(/[\s-]/g, '');
-    if (normCif !== normCifConfirm) {
-      return { success: false, error: 'Los CIF/NIF introducidos no coinciden.' };
+    const cifConfirmValidation = validateCifOrNif(data.cifConfirm);
+    if (!cifConfirmValidation.valid) {
+      return { success: false, error: 'La confirmación del CIF/NIF no tiene un formato válido.' };
     }
 
+    if (cifValidation.formatted !== cifConfirmValidation.formatted) {
+      return { success: false, error: 'Los dos CIF/NIF introducidos no coinciden.' };
+    }
+
+    const normCif = cifValidation.formatted;
+
+    // El CIF/NIF es el identificador único: no puede repetirse con otra empresa
     if (companies.some((c) => (c.cif || '').trim().toUpperCase().replace(/[\s-]/g, '') === normCif)) {
-      return { success: false, error: `Ya existe una empresa registrada con el CIF/NIF "${data.cif.trim()}".` };
+      return { success: false, error: `Ya existe una empresa registrada con el CIF/NIF "${normCif}".` };
     }
 
     if (!data.adminName.trim()) return { success: false, error: 'Introduce el nombre del administrador.' };
@@ -606,9 +632,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newCompanyId = `comp-${Date.now()}`;
     const newCompany: Company = {
       id: newCompanyId,
-      code: normCode,
+      code: data.companyCode.trim().toUpperCase(),
       name: data.companyName.trim(),
-      cif: data.cif.trim().toUpperCase(),
+      cif: normCif,
       createdAt: new Date().toISOString(),
     };
 
@@ -655,21 +681,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
 
-  const recoverAdminCredentials = (companyCode: string, cif: string) => {
-    const normCode = companyCode.trim().toUpperCase();
-    const normCif = cif.trim().toUpperCase().replace(/[\s-]/g, '');
-
-    const company = companies.find((c) => c.code.toUpperCase() === normCode);
-    if (!company) {
-      return { success: false, message: `No encontramos ninguna empresa con el código "${companyCode}".` };
+  /**
+   * Modificar / Corregir el CIF/NIF de la empresa actual desde la app
+   */
+  const updateCompanyCif = (newCif: string) => {
+    if (!currentUser || currentUser.role !== 'administrador' || !currentCompany) {
+      return { success: false, error: 'Solo el administrador puede corregir el CIF/NIF de la empresa.' };
     }
 
-    const companyCif = (company.cif || '').trim().toUpperCase().replace(/[\s-]/g, '');
-    if (companyCif && companyCif !== normCif) {
+    const validation = validateCifOrNif(newCif);
+    if (!validation.valid) {
+      return { success: false, error: validation.error || 'CIF/NIF inválido.' };
+    }
+
+    const normCif = validation.formatted;
+
+    // Comprobar que no esté registrado por OTRA empresa distinta
+    const existsInOther = companies.some(
+      (c) =>
+        c.id !== currentCompany.id &&
+        (c.cif || '').trim().toUpperCase().replace(/[\s-]/g, '') === normCif
+    );
+    if (existsInOther) {
       return {
         success: false,
-        message: `El CIF/NIF introducido no coincide con los datos registrados para la empresa ${company.name}.`,
+        error: `Ya existe otra empresa registrada en el sistema con el CIF/NIF "${normCif}".`,
       };
+    }
+
+    const updatedCompany: Company = {
+      ...currentCompany,
+      cif: normCif,
+    };
+
+    setCompanies((prev) =>
+      prev.map((c) => (c.id === currentCompany.id ? updatedCompany : c))
+    );
+    fsSet('companies', currentCompany.id, updatedCompany);
+
+    return { success: true };
+  };
+
+  const recoverAdminCredentials = (companyCode: string, cif: string) => {
+    const normCif = cif.trim().toUpperCase().replace(/[\s-]/g, '');
+
+    if (!normCif) {
+      return { success: false, message: 'Por favor, introduce el CIF/NIF de la empresa.' };
+    }
+
+    // Buscamos la empresa por su CIF/NIF único
+    const company = companies.find(
+      (c) => (c.cif || '').trim().toUpperCase().replace(/[\s-]/g, '') === normCif
+    );
+    if (!company) {
+      return { success: false, message: `No encontramos ninguna empresa registrada con el CIF/NIF "${cif}".` };
     }
 
     const adminUser = allUsers.find(
@@ -695,7 +760,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       success: true,
-      message: `Se ha restablecido la clave para el administrador (${adminUser.name}) de ${company.name}. Tu clave provisional es: ${tempPass}`,
+      message: `Se ha restablecido la clave para el administrador (${adminUser.name}) de ${company.name} (CIF: ${company.cif}). Tu clave provisional es: ${tempPass}`,
       temporaryPassword: tempPass,
     };
   };
@@ -1772,6 +1837,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         logout,
         registerAdminAndCompany,
         recoverAdminCredentials,
+        updateCompanyCif,
         quickSwitchUser,
         deleteCurrentCompany,
         resetCurrentCompanyData,

@@ -300,6 +300,7 @@ export const LoginView: React.FC = () => {
                       <input
                         type="text"
                         required
+                        maxLength={9}
                         value={adminCif}
                         onChange={(e) => setAdminCif(e.target.value.toUpperCase())}
                         placeholder="Ej. B12345678 o 12345678Z"
@@ -457,9 +458,10 @@ export const LoginView: React.FC = () => {
                       <input
                         type="text"
                         required
+                        maxLength={9}
                         value={regCif}
                         onChange={(e) => setRegCif(e.target.value.toUpperCase())}
-                        placeholder="Ej. B12345678"
+                        placeholder="Ej. B12345678 o 12345678Z"
                         className="w-full text-xs sm:text-sm font-mono font-bold px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500 uppercase"
                       />
                     </div>
@@ -471,6 +473,7 @@ export const LoginView: React.FC = () => {
                       <input
                         type="text"
                         required
+                        maxLength={9}
                         value={regCifConfirm}
                         onChange={(e) => setRegCifConfirm(e.target.value.toUpperCase())}
                         placeholder="Repite el CIF/NIF"
@@ -478,6 +481,9 @@ export const LoginView: React.FC = () => {
                       />
                     </div>
                   </div>
+                  <p className="text-[11px] text-slate-500">
+                    Obligatorio: letra y 8 números (CIF) u 8 números y letra (NIF). Identificador único de la empresa.
+                  </p>
                 </div>
 
                 {/* 2. Datos del administrador */}

@@ -29,6 +29,7 @@ export const UsersView: React.FC = () => {
     createUser,
     updateUser,
     deleteUser,
+    updateCompanyCif,
   } = useApp();
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -40,6 +41,7 @@ export const UsersView: React.FC = () => {
   const [name, setName] = useState('');
   const [accessKey, setAccessKey] = useState('');
   const [accessKeyConfirm, setAccessKeyConfirm] = useState('');
+  const [adminCompanyCif, setAdminCompanyCif] = useState('');
   const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [copiedKeyUserId, setCopiedKeyUserId] = useState<string | null>(null);
@@ -59,6 +61,7 @@ export const UsersView: React.FC = () => {
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     setAccessKey(`OP-${randomSuffix}`);
     setAccessKeyConfirm(`OP-${randomSuffix}`);
+    setAdminCompanyCif(currentCompany?.cif || '');
     setSelectedDeptIds(departments.length > 0 ? [departments[0].id] : []);
     setErrorMsg('');
     setModalOpen(true);
@@ -70,6 +73,7 @@ export const UsersView: React.FC = () => {
     setName(user.name);
     setAccessKey(user.accessKey);
     setAccessKeyConfirm(user.accessKey);
+    setAdminCompanyCif(currentCompany?.cif || '');
     const validDeptIds = (user.departmentIds || []).filter((id) =>
       departments.some((d) => d.id === id)
     );
@@ -125,6 +129,18 @@ export const UsersView: React.FC = () => {
           : 'Las dos claves de acceso no coinciden.'
       );
       return;
+    }
+
+    if (role === 'administrador') {
+      if (!adminCompanyCif.trim()) {
+        setErrorMsg('El CIF/NIF de la empresa es obligatorio.');
+        return;
+      }
+      const cifRes = updateCompanyCif(adminCompanyCif);
+      if (!cifRes.success) {
+        setErrorMsg(cifRes.error || 'Error al actualizar el CIF/NIF de la empresa.');
+        return;
+      }
     }
 
     if (editingUserId) {
@@ -368,7 +384,11 @@ export const UsersView: React.FC = () => {
           <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl border border-slate-200 p-6 my-auto animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <h3 className="font-bold text-slate-800 text-base">
-                {editingUserId ? 'Editar Usuario' : 'Nuevo Usuario'}
+                {editingUserId
+                  ? role === 'administrador'
+                    ? 'Editar Administrador y CIF de Empresa'
+                    : 'Editar Usuario'
+                  : 'Nuevo Usuario'}
               </h3>
               <button
                 onClick={() => setModalOpen(false)}
@@ -547,16 +567,33 @@ export const UsersView: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                /* Si es Administrador: Contraseña y datos vinculados a la empresa */
-                <div className="space-y-3 p-3.5 bg-indigo-50/50 rounded-2xl border border-indigo-100">
+                /* Si es Administrador: Contraseña y corrección del CIF/NIF de la empresa */
+                <div className="space-y-3.5 p-3.5 bg-indigo-50/50 rounded-2xl border border-indigo-100">
                   <div className="text-xs text-indigo-900 font-semibold flex items-center justify-between">
-                    <span>Contraseña de Administrador</span>
+                    <span>Datos de Administrador y Empresa</span>
                     <span className="font-mono text-[11px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
-                      CIF: {currentCompany?.cif || '-'}
+                      Código: {currentCompany?.code}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      CIF/NIF de la Empresa * (Identificador único)
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={9}
+                      value={adminCompanyCif}
+                      onChange={(e) => setAdminCompanyCif(e.target.value.toUpperCase())}
+                      placeholder="Ej. B12345678 o 12345678Z"
+                      className="w-full text-xs sm:text-sm font-mono font-bold uppercase px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Obligatorio: letra y 8 números (CIF) u 8 números y letra (NIF). Puedes corregir el CIF/NIF aquí.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                         Contraseña * (1/2)
