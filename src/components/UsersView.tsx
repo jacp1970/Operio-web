@@ -29,7 +29,7 @@ export const UsersView: React.FC = () => {
     createUser,
     updateUser,
     deleteUser,
-    updateCompanyCif,
+    updateCompanyDetails,
   } = useApp();
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -42,6 +42,7 @@ export const UsersView: React.FC = () => {
   const [accessKey, setAccessKey] = useState('');
   const [accessKeyConfirm, setAccessKeyConfirm] = useState('');
   const [adminCompanyCif, setAdminCompanyCif] = useState('');
+  const [adminCompanyCode, setAdminCompanyCode] = useState('');
   const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [copiedKeyUserId, setCopiedKeyUserId] = useState<string | null>(null);
@@ -62,6 +63,7 @@ export const UsersView: React.FC = () => {
     setAccessKey(`OP-${randomSuffix}`);
     setAccessKeyConfirm(`OP-${randomSuffix}`);
     setAdminCompanyCif(currentCompany?.cif || '');
+    setAdminCompanyCode(currentCompany?.code || '');
     setSelectedDeptIds(departments.length > 0 ? [departments[0].id] : []);
     setErrorMsg('');
     setModalOpen(true);
@@ -74,6 +76,7 @@ export const UsersView: React.FC = () => {
     setAccessKey(user.accessKey);
     setAccessKeyConfirm(user.accessKey);
     setAdminCompanyCif(currentCompany?.cif || '');
+    setAdminCompanyCode(currentCompany?.code || '');
     const validDeptIds = (user.departmentIds || []).filter((id) =>
       departments.some((d) => d.id === id)
     );
@@ -132,13 +135,20 @@ export const UsersView: React.FC = () => {
     }
 
     if (role === 'administrador') {
+      if (!adminCompanyCode.trim()) {
+        setErrorMsg('El código de la empresa es obligatorio.');
+        return;
+      }
       if (!adminCompanyCif.trim()) {
         setErrorMsg('El CIF/NIF de la empresa es obligatorio.');
         return;
       }
-      const cifRes = updateCompanyCif(adminCompanyCif);
-      if (!cifRes.success) {
-        setErrorMsg(cifRes.error || 'Error al actualizar el CIF/NIF de la empresa.');
+      const companyRes = updateCompanyDetails({
+        code: adminCompanyCode.trim().toUpperCase(),
+        cif: adminCompanyCif.trim().toUpperCase(),
+      });
+      if (!companyRes.success) {
+        setErrorMsg(companyRes.error || 'Error al actualizar los datos de la empresa.');
         return;
       }
     }
@@ -386,7 +396,7 @@ export const UsersView: React.FC = () => {
               <h3 className="font-bold text-slate-800 text-base">
                 {editingUserId
                   ? role === 'administrador'
-                    ? 'Editar Administrador y CIF de Empresa'
+                    ? 'Editar Administrador y Datos de Empresa'
                     : 'Editar Usuario'
                   : 'Nuevo Usuario'}
               </h3>
@@ -567,30 +577,48 @@ export const UsersView: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                /* Si es Administrador: Contraseña y corrección del CIF/NIF de la empresa */
+                /* Si es Administrador: Contraseña y corrección del CIF/NIF y Código de la empresa */
                 <div className="space-y-3.5 p-3.5 bg-indigo-50/50 rounded-2xl border border-indigo-100">
                   <div className="text-xs text-indigo-900 font-semibold flex items-center justify-between">
                     <span>Datos de Administrador y Empresa</span>
-                    <span className="font-mono text-[11px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
-                      Código: {currentCompany?.code}
+                    <span className="text-[11px] text-indigo-600 font-medium">
+                      Modificables
                     </span>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      CIF/NIF de la Empresa * (Identificador único)
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={9}
-                      value={adminCompanyCif}
-                      onChange={(e) => setAdminCompanyCif(e.target.value.toUpperCase())}
-                      placeholder="Ej. B12345678 o 12345678Z"
-                      className="w-full text-xs sm:text-sm font-mono font-bold uppercase px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Obligatorio: letra y 8 números (CIF) u 8 números y letra (NIF). Puedes corregir el CIF/NIF aquí.
-                    </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Código de Empresa *
+                      </label>
+                      <input
+                        type="text"
+                        value={adminCompanyCode}
+                        onChange={(e) => setAdminCompanyCode(e.target.value.toUpperCase())}
+                        placeholder="Ej. EMPRESA01"
+                        className="w-full text-xs sm:text-sm font-mono font-bold uppercase px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Código que usan los operarios para acceder.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        CIF/NIF de la Empresa *
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={9}
+                        value={adminCompanyCif}
+                        onChange={(e) => setAdminCompanyCif(e.target.value.toUpperCase())}
+                        placeholder="Ej. B12345678 o 12345678Z"
+                        className="w-full text-xs sm:text-sm font-mono font-bold uppercase px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Identificador único: letra y 8 números u 8 números y letra.
+                      </p>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">

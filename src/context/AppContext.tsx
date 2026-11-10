@@ -61,6 +61,7 @@ interface AppContextType {
   }) => { success: boolean; error?: string };
   recoverAdminCredentials: (companyCode: string, cif: string) => { success: boolean; message: string; temporaryPassword?: string };
   updateCompanyCif: (cif: string) => { success: boolean; error?: string };
+  updateCompanyDetails: (updates: { code?: string; cif?: string; name?: string }) => { success: boolean; error?: string };
   quickSwitchUser: (userId: string) => void;
   deleteCurrentCompany: () => Promise<{ success: boolean; error?: string }>;
   resetCurrentCompanyData: (options?: {
@@ -682,36 +683,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
-   * Modificar / Corregir el CIF/NIF de la empresa actual desde la app
+   * Modificar / Corregir los datos de la empresa actual desde la app
+   * (Código de empresa, CIF/NIF, Nombre)
+   * Nota: El código y el nombre pueden repetirse entre empresas; lo que identifica a la empresa es el CIF/NIF.
    */
-  const updateCompanyCif = (newCif: string) => {
+  const updateCompanyDetails = (updates: { code?: string; cif?: string; name?: string }) => {
     if (!currentUser || currentUser.role !== 'administrador' || !currentCompany) {
-      return { success: false, error: 'Solo el administrador puede corregir el CIF/NIF de la empresa.' };
+      return { success: false, error: 'Solo el administrador puede corregir los datos de la empresa.' };
     }
 
-    const validation = validateCifOrNif(newCif);
-    if (!validation.valid) {
-      return { success: false, error: validation.error || 'CIF/NIF inválido.' };
+    let normCode = currentCompany.code;
+    if (updates.code !== undefined) {
+      const trimmedCode = updates.code.trim().toUpperCase();
+      if (!trimmedCode) {
+        return { success: false, error: 'El código de la empresa no puede estar vacío.' };
+      }
+      normCode = trimmedCode;
     }
 
-    const normCif = validation.formatted;
+    let normCif = currentCompany.cif;
+    if (updates.cif !== undefined) {
+      const validation = validateCifOrNif(updates.cif);
+      if (!validation.valid) {
+        return { success: false, error: validation.error || 'CIF/NIF inválido.' };
+      }
+      normCif = validation.formatted;
 
-    // Comprobar que no esté registrado por OTRA empresa distinta
-    const existsInOther = companies.some(
-      (c) =>
-        c.id !== currentCompany.id &&
-        (c.cif || '').trim().toUpperCase().replace(/[\s-]/g, '') === normCif
-    );
-    if (existsInOther) {
-      return {
-        success: false,
-        error: `Ya existe otra empresa registrada en el sistema con el CIF/NIF "${normCif}".`,
-      };
+      // Comprobar que no esté registrado por OTRA empresa distinta
+      const existsInOther = companies.some(
+        (c) =>
+          c.id !== currentCompany.id &&
+          (c.cif || '').trim().toUpperCase().replace(/[\s-]/g, '') === normCif
+      );
+      if (existsInOther) {
+        return {
+          success: false,
+          error: `Ya existe otra empresa registrada en el sistema con el CIF/NIF "${normCif}".`,
+        };
+      }
+    }
+
+    let normName = currentCompany.name;
+    if (updates.name !== undefined) {
+      const trimmedName = updates.name.trim();
+      if (!trimmedName) {
+        return { success: false, error: 'El nombre de la empresa no puede estar vacío.' };
+      }
+      normName = trimmedName;
     }
 
     const updatedCompany: Company = {
       ...currentCompany,
+      code: normCode,
       cif: normCif,
+      name: normName,
     };
 
     setCompanies((prev) =>
@@ -721,6 +746,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return { success: true };
   };
+
+  /**
+   * Modificar / Corregir el CIF/NIF de la empresa actual desde la app
+   */
+  const updateCompanyCif = (newCif: string) => updateCompanyDetails({ cif: newCif });
 
   const recoverAdminCredentials = (companyCode: string, cif: string) => {
     const normCif = cif.trim().toUpperCase().replace(/[\s-]/g, '');
@@ -1838,6 +1868,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         registerAdminAndCompany,
         recoverAdminCredentials,
         updateCompanyCif,
+        updateCompanyDetails,
         quickSwitchUser,
         deleteCurrentCompany,
         resetCurrentCompanyData,
