@@ -65,7 +65,7 @@ export const ResetCompanyModal: React.FC<ResetCompanyModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-graphite-950/70 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
       <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-rose-200 overflow-hidden my-auto animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-5 sm:p-6 bg-gradient-to-r from-rose-500 to-rose-600 text-white flex items-start justify-between gap-4">
@@ -103,18 +103,18 @@ export const ResetCompanyModal: React.FC<ResetCompanyModalProps> = ({
           )}
 
           {/* Current Company Box */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="p-4 rounded-2xl bg-graphite-50 border border-graphite-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider block">
+              <span className="text-xs text-graphite-400 font-semibold uppercase tracking-wider block">
                 Empresa seleccionada
               </span>
-              <p className="text-base font-bold text-slate-900 flex items-center gap-2 mt-0.5">
-                <Building2 className="w-4 h-4 text-slate-500" />
+              <p className="text-base font-bold text-graphite-900 flex items-center gap-2 mt-0.5">
+                <Building2 className="w-4 h-4 text-graphite-500" />
                 <span>{currentCompany.name}</span>
               </p>
             </div>
             <div className="self-start sm:self-auto">
-              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider block">
+              <span className="text-xs text-graphite-400 font-semibold uppercase tracking-wider block">
                 Código de Empresa
               </span>
               <span className="font-mono text-sm font-black text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 inline-block mt-0.5">
@@ -125,11 +125,11 @@ export const ResetCompanyModal: React.FC<ResetCompanyModalProps> = ({
 
           {/* Detailed warning explanation */}
           <div className="space-y-2">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <h4 className="text-xs font-bold text-graphite-700 uppercase tracking-wider flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
               <span>¿Qué ocurrirá al resetear y borrar la empresa?</span>
             </h4>
-            <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-xs text-slate-700 space-y-2">
+            <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-xs text-graphite-700 space-y-2">
               <p className="font-semibold text-amber-950">
                 Se eliminarán de forma definitiva todos los registros asociados en Firebase:
               </p>
@@ -141,7 +141,7 @@ export const ResetCompanyModal: React.FC<ResetCompanyModalProps> = ({
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Building className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                  <Building className="w-3.5 h-3.5 text-oterio-600 shrink-0" />
                   <span>
                     <strong>{departments.length} Departamentos técnicos</strong> configurados.
                   </span>
@@ -159,7 +159,7 @@ export const ResetCompanyModal: React.FC<ResetCompanyModalProps> = ({
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Trash2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <Trash2 className="w-3.5 h-3.5 text-graphite-500 shrink-0" />
                   <span>Todas las notificaciones, alertas y la propia ficha de la empresa.</span>
                 </li>
               </ul>
@@ -171,7 +171,7 @@ export const ResetCompanyModal: React.FC<ResetCompanyModalProps> = ({
 
           {/* Security confirmation text input */}
           <div className="pt-1">
-            <label className="block text-xs font-bold text-slate-800 mb-1.5">
+            <label className="block text-xs font-bold text-graphite-800 mb-1.5">
               Para confirmar, escribe el código de la empresa (<span className="font-mono text-rose-700">{currentCompany.code}</span>):
             </label>
             <input
@@ -180,21 +180,21 @@ export const ResetCompanyModal: React.FC<ResetCompanyModalProps> = ({
               value={confirmCodeInput}
               onChange={(e) => setConfirmCodeInput(e.target.value)}
               placeholder={`Escribe ${currentCompany.code} aquí`}
-              className="w-full text-sm font-mono font-bold tracking-wider px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-rose-500 bg-slate-50/50 uppercase"
+              className="w-full text-sm font-mono font-bold tracking-wider px-3.5 py-2.5 rounded-xl border border-graphite-300 focus:ring-2 focus:ring-rose-500 bg-graphite-50/50 uppercase"
             />
-            <p className="text-[11px] text-slate-400 mt-1">
+            <p className="text-[11px] text-graphite-400 mt-1">
               El botón de borrado solo se habilitará cuando el código coincida exactamente.
             </p>
           </div>
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-end gap-3">
+        <div className="p-4 sm:p-5 bg-graphite-50 border-t border-graphite-200/80 flex flex-col sm:flex-row items-center justify-end gap-3">
           <button
             type="button"
             disabled={isDeleting}
             onClick={onClose}
-            className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-600 hover:bg-slate-200/70 transition-colors disabled:opacity-50 cursor-pointer"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-graphite-600 hover:bg-graphite-200/70 transition-colors disabled:opacity-50 cursor-pointer"
           >
             Cancelar
           </button>
@@ -206,7 +206,7 @@ export const ResetCompanyModal: React.FC<ResetCompanyModalProps> = ({
             className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white transition-all shadow-md ${
               isCodeMatched && !isDeleting
                 ? 'bg-rose-600 hover:bg-rose-700 active:scale-95 shadow-rose-200 cursor-pointer'
-                : 'bg-slate-300 cursor-not-allowed shadow-none opacity-60'
+                : 'bg-graphite-300 cursor-not-allowed shadow-none opacity-60'
             }`}
           >
             {isDeleting ? (

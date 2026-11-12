@@ -81,17 +81,17 @@ export const DepartmentsView: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h2 className="text-2xl font-black text-graphite-900 tracking-tight">
             Departamentos de la Empresa
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+          <p className="text-xs sm:text-sm text-graphite-500 mt-0.5">
             Gestión y estructuración de secciones técnicas del taller
           </p>
         </div>
 
         <button
           onClick={handleOpenCreate}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs sm:text-sm font-bold hover:bg-indigo-700 shadow-sm transition-all"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-oterio-600 text-white text-xs sm:text-sm font-bold hover:bg-oterio-700 shadow-sm transition-all cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Añadir Departamento</span>
@@ -106,33 +106,33 @@ export const DepartmentsView: React.FC = () => {
           return (
             <div
               key={dept.id}
-              className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all"
+              className="bg-white rounded-2xl border border-graphite-200/90 p-5 shadow-xs flex flex-col justify-between hover:border-graphite-300 transition-all"
             >
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600">
+                  <div className="p-2.5 rounded-xl bg-oterio-50 text-oterio-600">
                     <Building2 className="w-5 h-5" />
                   </div>
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-graphite-100 text-graphite-700 tabular-nums">
                     {countJobs} {countJobs === 1 ? 'trabajo' : 'trabajos'}
                   </span>
                 </div>
 
-                <h3 className="font-bold text-slate-900 text-base mb-1">{dept.name}</h3>
-                <p className="text-xs text-slate-400">ID: {dept.id}</p>
+                <h3 className="font-bold text-graphite-900 text-base mb-1">{dept.name}</h3>
+                <p className="text-xs text-graphite-400">ID: {dept.id}</p>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t border-graphite-100">
                 <button
                   onClick={() => handleOpenEdit(dept.id, dept.name)}
-                  className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                  className="p-2 text-graphite-500 hover:text-oterio-600 hover:bg-oterio-50 rounded-lg transition-colors cursor-pointer"
                   title="Editar departamento"
                 >
                   <Edit2 className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => handleDeleteClick(dept.id, dept.name)}
-                  className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                  className="p-2 text-graphite-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                   title="Eliminar departamento"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -145,15 +145,15 @@ export const DepartmentsView: React.FC = () => {
 
       {/* Modal create / edit */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-6 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <h3 className="font-bold text-slate-800 text-base">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-graphite-950/55 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-graphite-200 p-6 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-graphite-100 mb-4">
+              <h3 className="font-bold text-graphite-900 text-base">
                 {editingDeptId ? 'Editar Departamento' : 'Nuevo Departamento'}
               </h3>
               <button
                 onClick={() => setModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-graphite-400 hover:text-graphite-700 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -167,7 +167,7 @@ export const DepartmentsView: React.FC = () => {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
                   Nombre del Departamento *
                 </label>
                 <input
@@ -179,7 +179,7 @@ export const DepartmentsView: React.FC = () => {
                     if (e.key === 'Enter') handleSave();
                   }}
                   placeholder="Ej. Mecanizado y Torno, Soldadura, etc."
-                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-graphite-300 focus:ring-2 focus:ring-oterio-500"
                 />
               </div>
 
@@ -187,14 +187,14 @@ export const DepartmentsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                  className="px-4 py-2 text-xs font-semibold text-graphite-600 hover:bg-graphite-100 rounded-xl cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
                   onClick={handleSave}
-                  className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl"
+                  className="px-4 py-2 text-xs font-bold text-white bg-oterio-600 hover:bg-oterio-700 rounded-xl cursor-pointer"
                 >
                   {editingDeptId ? 'Guardar Cambios' : 'Crear Departamento'}
                 </button>

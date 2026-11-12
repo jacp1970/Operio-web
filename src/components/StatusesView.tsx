@@ -17,7 +17,7 @@ export const StatusesView: React.FC = () => {
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [isCompleted, setIsCompleted] = useState(false);
-  const [color, setColor] = useState('indigo');
+  const [color, setColor] = useState('oterio');
   const [errorMsg, setErrorMsg] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; jobsCount: number } | null>(null);
 
@@ -33,7 +33,7 @@ export const StatusesView: React.FC = () => {
     setEditingStatusId(null);
     setName('');
     setIsCompleted(false);
-    setColor('indigo');
+    setColor('oterio');
     setErrorMsg('');
     setModalOpen(true);
   };
@@ -42,7 +42,7 @@ export const StatusesView: React.FC = () => {
     setEditingStatusId(st.id);
     setName(st.name);
     setIsCompleted(st.isCompleted || false);
-    setColor(st.color || 'indigo');
+    setColor(st.color || 'oterio');
     setErrorMsg('');
     setModalOpen(true);
   };
@@ -87,17 +87,17 @@ export const StatusesView: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h2 className="text-2xl font-black text-graphite-900 tracking-tight">
             Estados de los Trabajos
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+          <p className="text-xs sm:text-sm text-graphite-500 mt-0.5">
             Fases por las que transcurre cada orden de trabajo desde el inicio hasta su finalización
           </p>
         </div>
 
         <button
           onClick={handleOpenCreate}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs sm:text-sm font-bold hover:bg-indigo-700 shadow-sm transition-all"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-oterio-600 text-white text-xs sm:text-sm font-bold hover:bg-oterio-700 shadow-sm transition-all cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Añadir Estado</span>
@@ -112,12 +112,12 @@ export const StatusesView: React.FC = () => {
           return (
             <div
               key={st.id}
-              className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all"
+              className="bg-white rounded-2xl border border-graphite-200/90 p-5 shadow-xs flex flex-col justify-between hover:border-graphite-300 transition-all"
             >
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600">
+                    <div className="p-2.5 rounded-xl bg-oterio-50 text-oterio-600">
                       <Tag className="w-5 h-5" />
                     </div>
                     {st.isCompleted && (
@@ -127,26 +127,26 @@ export const StatusesView: React.FC = () => {
                     )}
                   </div>
 
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-graphite-100 text-graphite-700 tabular-nums">
                     {count} {count === 1 ? 'orden' : 'órdenes'}
                   </span>
                 </div>
 
-                <h3 className="font-bold text-slate-900 text-base mb-1">{st.name}</h3>
-                <p className="text-xs text-slate-400">ID: {st.id}</p>
+                <h3 className="font-bold text-graphite-900 text-base mb-1">{st.name}</h3>
+                <p className="text-xs text-graphite-400">ID: {st.id}</p>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t border-graphite-100">
                 <button
                   onClick={() => handleOpenEdit(st)}
-                  className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                  className="p-2 text-graphite-500 hover:text-oterio-600 hover:bg-oterio-50 rounded-lg transition-colors cursor-pointer"
                   title="Editar estado"
                 >
                   <Edit2 className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => handleDeleteClick(st.id, st.name)}
-                  className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                  className="p-2 text-graphite-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                   title="Eliminar estado"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -159,15 +159,15 @@ export const StatusesView: React.FC = () => {
 
       {/* Modal create / edit */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-6 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <h3 className="font-bold text-slate-800 text-base">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-graphite-950/55 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-graphite-200 p-6 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-graphite-100 mb-4">
+              <h3 className="font-bold text-graphite-900 text-base">
                 {editingStatusId ? 'Editar Estado' : 'Nuevo Estado'}
               </h3>
               <button
                 onClick={() => setModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-graphite-400 hover:text-graphite-700 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -181,7 +181,7 @@ export const StatusesView: React.FC = () => {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
                   Nombre del Estado *
                 </label>
                 <input
@@ -193,7 +193,7 @@ export const StatusesView: React.FC = () => {
                     if (e.key === 'Enter') handleSave();
                   }}
                   placeholder="Ej. En curso, Control de calidad, Terminado..."
-                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-graphite-300 focus:ring-2 focus:ring-oterio-500"
                 />
               </div>
 
@@ -203,9 +203,9 @@ export const StatusesView: React.FC = () => {
                   id="chk-completed"
                   checked={isCompleted}
                   onChange={(e) => setIsCompleted(e.target.checked)}
-                  className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                  className="rounded text-oterio-600 focus:ring-oterio-500 w-4 h-4 cursor-pointer"
                 />
-                <label htmlFor="chk-completed" className="text-xs text-slate-700 font-medium">
+                <label htmlFor="chk-completed" className="text-xs text-graphite-700 font-medium cursor-pointer">
                   Marca el trabajo como completado / terminado
                 </label>
               </div>
@@ -214,14 +214,14 @@ export const StatusesView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                  className="px-4 py-2 text-xs font-semibold text-graphite-600 hover:bg-graphite-100 rounded-xl cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
                   onClick={handleSave}
-                  className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl"
+                  className="px-4 py-2 text-xs font-bold text-white bg-oterio-600 hover:bg-oterio-700 rounded-xl cursor-pointer"
                 >
                   {editingStatusId ? 'Guardar Cambios' : 'Crear Estado'}
                 </button>

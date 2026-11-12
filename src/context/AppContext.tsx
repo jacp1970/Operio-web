@@ -650,7 +650,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newStatuses: JobStatus[] = [
       { id: `stat-${Date.now()}-1`, companyId: newCompanyId, name: 'Pendiente', color: 'amber', isCompleted: false },
       { id: `stat-${Date.now()}-2`, companyId: newCompanyId, name: 'En curso', color: 'sky', isCompleted: false },
-      { id: `stat-${Date.now()}-3`, companyId: newCompanyId, name: 'Control de calidad', color: 'indigo', isCompleted: false },
+      { id: `stat-${Date.now()}-3`, companyId: newCompanyId, name: 'Control de calidad', color: 'oterio', isCompleted: false },
       { id: `stat-${Date.now()}-4`, companyId: newCompanyId, name: 'Terminado', color: 'emerald', isCompleted: true },
     ];
 
@@ -908,7 +908,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const freshStatuses: JobStatus[] = [
         { id: `stat-${Date.now()}-1`, companyId: cId, name: 'Pendiente', color: 'amber', isCompleted: false },
         { id: `stat-${Date.now()}-2`, companyId: cId, name: 'En curso', color: 'sky', isCompleted: false },
-        { id: `stat-${Date.now()}-3`, companyId: cId, name: 'Control de calidad', color: 'indigo', isCompleted: false },
+        { id: `stat-${Date.now()}-3`, companyId: cId, name: 'Control de calidad', color: 'oterio', isCompleted: false },
         { id: `stat-${Date.now()}-4`, companyId: cId, name: 'Terminado', color: 'emerald', isCompleted: true },
       ];
 

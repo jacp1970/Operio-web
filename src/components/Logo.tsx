@@ -11,9 +11,7 @@ export const Logo: React.FC<LogoProps> = ({
   size = 'md',
   showSubtitle = false,
   className = '',
-  variant = 'full',
 }) => {
-  // Height definitions for optimal visual balance across navigation, cards, and headers
   const sizeConfig = {
     sm: {
       imgHeight: 'h-7 sm:h-8',
@@ -21,12 +19,12 @@ export const Logo: React.FC<LogoProps> = ({
       gap: 'gap-1.5',
     },
     md: {
-      imgHeight: 'h-9 sm:h-10',
+      imgHeight: 'h-9 sm:h-11',
       subtitle: 'text-[11px]',
       gap: 'gap-2',
     },
     lg: {
-      imgHeight: 'h-13 sm:h-14',
+      imgHeight: 'h-12 sm:h-14',
       subtitle: 'text-xs',
       gap: 'gap-2.5',
     },
@@ -37,30 +35,21 @@ export const Logo: React.FC<LogoProps> = ({
     },
   }[size];
 
-  const logoSrc =
-    variant === 'icon'
-      ? '/assets/aistudio/operio_icon.png'
-      : '/assets/aistudio/operio_logo_transparent.png';
-
   return (
     <div className={`inline-flex flex-col select-none ${className}`}>
       <div className={`flex items-center ${sizeConfig.gap}`}>
         <img
-          src={logoSrc}
-          alt="OPERIO"
-          className={`${sizeConfig.imgHeight} w-auto object-contain max-w-full transition-transform duration-200 hover:scale-[1.02]`}
+          src="/assets/aistudio/OTERIOlogo_549a0e32.jpg"
+          alt="Oterio - Gestión del Trabajo"
+          className={`${sizeConfig.imgHeight} w-auto object-contain max-w-full mix-blend-multiply transition-transform duration-200 hover:scale-[1.02]`}
           loading="eager"
-          onError={(e) => {
-            // Fallback to direct original asset if needed
-            (e.currentTarget as HTMLImageElement).src =
-              '/assets/aistudio/1793304075553_ea6c7137.jpg';
-          }}
+          referrerPolicy="no-referrer"
         />
       </div>
 
       {showSubtitle && (
         <span
-          className={`font-medium text-slate-500 tracking-tight mt-1 pl-0.5 ${sizeConfig.subtitle}`}
+          className={`font-medium text-graphite-600 tracking-tight mt-1.5 pl-0.5 ${sizeConfig.subtitle}`}
         >
           Control de Partes de Trabajo
         </span>
@@ -68,4 +57,3 @@ export const Logo: React.FC<LogoProps> = ({
     </div>
   );
 };
-

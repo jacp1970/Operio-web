@@ -41,7 +41,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
 
   if (currentUser.role === 'solo_lectura') {
     return (
-      <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center text-slate-500">
+      <div className="bg-white rounded-3xl border border-graphite-200 p-8 text-center text-graphite-500">
         El rol de sólo lectura no dispone de panel de notificaciones operativas.
       </div>
     );
@@ -97,7 +97,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
         );
       case 'new_assignment':
         return (
-          <div className="p-2.5 rounded-xl bg-indigo-100 text-indigo-700 shrink-0">
+          <div className="p-2.5 rounded-xl bg-oterio-100 text-oterio-700 shrink-0">
             <UserCheck className="w-5 h-5" />
           </div>
         );
@@ -109,7 +109,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
         );
       default:
         return (
-          <div className="p-2.5 rounded-xl bg-slate-100 text-slate-700 shrink-0">
+          <div className="p-2.5 rounded-xl bg-graphite-100 text-graphite-700 shrink-0">
             <Bell className="w-5 h-5" />
           </div>
         );
@@ -121,20 +121,20 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+          <h2 className="text-2xl font-black text-graphite-900 tracking-tight flex items-center gap-2">
             <span>Centro de Notificaciones</span>
             {unreadNotificationsCount > 0 && (
-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-rose-500 text-white">
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-oterio-600 text-white tabular-nums">
                 {unreadNotificationsCount} sin leer
               </span>
             )}
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+          <p className="text-xs sm:text-sm text-graphite-500 mt-0.5">
             {currentUser.role === 'administrador'
               ? 'Avisos en tiempo real sobre cambios de estado y alertas reportadas por los operarios.'
               : 'Avisos sobre trabajos asignados, estados, alertas e incidencias urgentes.'}
           </p>
-          <p className="text-[11px] text-indigo-600 font-semibold mt-1 flex items-center gap-1.5">
+          <p className="text-[11px] text-oterio-700 font-semibold mt-1 flex items-center gap-1.5">
             <Info className="w-3.5 h-3.5" />
             Haz clic en cualquier aviso para acceder de inmediato a los detalles del trabajo correspondiente.
           </p>
@@ -144,7 +144,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={markAllNotificationsAsRead}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white border border-graphite-200 text-graphite-700 hover:bg-graphite-50 shadow-2xs transition-colors cursor-pointer"
             >
               <CheckCheck className="w-4 h-4 text-emerald-600" />
               <span>Marcar todas como leídas</span>
@@ -178,12 +178,12 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
 
       {/* List of notifications */}
       {userNotifications.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-slate-200/90 p-12 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+        <div className="bg-white rounded-3xl border border-graphite-200/90 p-12 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-graphite-100 text-graphite-400 flex items-center justify-center mx-auto mb-3">
             <Bell className="w-6 h-6" />
           </div>
-          <h3 className="font-bold text-slate-800 text-base">Bandeja de notificaciones vacía</h3>
-          <p className="text-xs text-slate-400 mt-1">
+          <h3 className="font-bold text-graphite-900 text-base">Bandeja de notificaciones vacía</h3>
+          <p className="text-xs text-graphite-400 mt-1">
             Recibirás avisos automáticos cuando haya cambios en los partes de trabajo.
           </p>
         </div>
@@ -208,10 +208,10 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                     handleNotificationClick(notif);
                   }
                 }}
-                className={`group p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer hover:border-indigo-400 hover:shadow-md ${
+                className={`group p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer hover:border-oterio-400 hover:shadow-md ${
                   notif.read
-                    ? 'bg-white border-slate-200/80 hover:bg-slate-50/60'
-                    : 'bg-indigo-50/50 border-indigo-200/90 shadow-2xs ring-1 ring-indigo-200/60 hover:bg-indigo-50/80'
+                    ? 'bg-white border-graphite-200/80 hover:bg-graphite-50/60'
+                    : 'bg-oterio-50/50 border-oterio-200/90 shadow-2xs ring-1 ring-oterio-200/60 hover:bg-oterio-50/80'
                 }`}
                 title="Haz clic para ver los detalles del trabajo"
               >
@@ -222,21 +222,21 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                     <div className="flex items-center gap-2">
                       <h4
                         className={`text-sm ${
-                          notif.read ? 'font-semibold text-slate-800' : 'font-bold text-slate-900'
-                        } group-hover:text-indigo-600 transition-colors`}
+                          notif.read ? 'font-semibold text-graphite-800' : 'font-bold text-graphite-900'
+                        } group-hover:text-oterio-700 transition-colors`}
                       >
                         {notif.title}
                       </h4>
                       {!notif.read && (
-                        <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0"></span>
+                        <span className="w-2 h-2 rounded-full bg-oterio-600 shrink-0"></span>
                       )}
                     </div>
 
-                    <p className="text-xs text-slate-600 leading-relaxed">
+                    <p className="text-xs text-graphite-600 leading-relaxed">
                       {notif.message}
                     </p>
 
-                    <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 pt-1">
+                    <div className="flex flex-wrap items-center gap-3 text-[11px] text-graphite-400 pt-1">
                       <span>
                         {new Date(notif.createdAt).toLocaleTimeString([], {
                           hour: '2-digit',
@@ -246,7 +246,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                       </span>
 
                       {notif.ot && (
-                        <span className="font-mono font-bold text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200">
+                        <span className="font-mono font-bold text-oterio-700 bg-oterio-50/80 px-2 py-0.5 rounded border border-oterio-200">
                           {notif.ot}
                         </span>
                       )}
@@ -259,8 +259,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                   <div
                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                       hasJob
-                        ? 'bg-indigo-600 text-white shadow-2xs group-hover:bg-indigo-700 group-hover:shadow-xs group-hover:scale-[1.02]'
-                        : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        ? 'bg-oterio-600 text-white shadow-2xs group-hover:bg-oterio-700 group-hover:shadow-xs group-hover:scale-[1.02]'
+                        : 'bg-graphite-100 text-graphite-600 border border-graphite-200'
                     }`}
                   >
                     <Eye className="w-3.5 h-3.5" />
@@ -274,7 +274,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                       e.stopPropagation();
                       clearNotification(notif.id);
                     }}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                    className="p-1.5 text-graphite-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                     title="Eliminar notificación"
                     aria-label="Eliminar notificación"
                   >

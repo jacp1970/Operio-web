@@ -149,33 +149,27 @@ export const LoginView: React.FC = () => {
 
 
   return (
-    <div className="min-h-screen bg-slate-100/70 flex flex-col justify-center py-10 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-graphite-50 flex flex-col justify-center py-10 px-4 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         {/* App Logo & Name always visible outside work area */}
         <div className="flex justify-center mb-3">
-          <Logo size="lg" showSubtitle={true} className="items-center text-center" />
+          <Logo size="lg" showSubtitle={false} className="items-center text-center" />
         </div>
 
-        <p className="text-center text-xs text-slate-500 font-medium">
+        <p className="text-center text-xs text-graphite-600 font-medium">
           Sistema multi-empresa para el control integral de partes de trabajo
         </p>
-        <div className="flex items-center justify-center gap-1.5 mt-2">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-[11px] font-medium text-emerald-700">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            Sincronización en tiempo real con Firebase
-          </span>
-        </div>
       </div>
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-7 px-6 shadow-xl shadow-slate-200/50 sm:rounded-3xl border border-slate-200/80">
+        <div className="bg-white py-7 px-6 shadow-xl shadow-graphite-200/60 sm:rounded-3xl border border-graphite-200/80">
           {/* =========================================================
               VIEW: LOGIN
              ========================================================= */}
           {mode === 'login' && (
             <div>
               {/* Role selector tabs */}
-              <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl mb-5 border border-slate-200">
+              <div className="grid grid-cols-2 p-1 bg-graphite-100 rounded-2xl mb-5 border border-graphite-200">
                 <button
                   type="button"
                   onClick={() => {
@@ -184,11 +178,11 @@ export const LoginView: React.FC = () => {
                   }}
                   className={`py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     loginRoleTab === 'user'
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-800'
+                      ? 'bg-white text-graphite-900 shadow-2xs'
+                      : 'text-graphite-500 hover:text-graphite-900'
                   }`}
                 >
-                  <Wrench className="w-3.5 h-3.5 text-emerald-600" />
+                  <Wrench className="w-3.5 h-3.5 text-graphite-700" />
                   <span>Operario / Administrativo</span>
                 </button>
 
@@ -200,11 +194,11 @@ export const LoginView: React.FC = () => {
                   }}
                   className={`py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     loginRoleTab === 'admin'
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-800'
+                      ? 'bg-white text-graphite-900 shadow-2xs'
+                      : 'text-graphite-500 hover:text-graphite-900'
                   }`}
                 >
-                  <Shield className="w-3.5 h-3.5 text-indigo-600" />
+                  <Shield className="w-3.5 h-3.5 text-oterio-600" />
                   <span>Administrador</span>
                 </button>
               </div>
@@ -227,42 +221,42 @@ export const LoginView: React.FC = () => {
               {loginRoleTab === 'user' && (
                 <form onSubmit={handleUserLoginSubmit} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
                       Código de Empresa *
                     </label>
                     <div className="relative">
-                      <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <Building2 className="w-4 h-4 text-graphite-400 absolute left-3.5 top-3" />
                       <input
                         type="text"
                         required
                         value={userCompanyCode}
                         onChange={(e) => setUserCompanyCode(e.target.value.toUpperCase())}
                         placeholder="Ej. EMPRESA01"
-                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold tracking-wider focus:ring-2 focus:ring-indigo-500 bg-slate-50/50 uppercase"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-graphite-300 text-sm font-mono font-bold tracking-wider focus:ring-2 focus:ring-oterio-500 focus:border-oterio-500 bg-graphite-50/50 uppercase"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
                       Clave de Acceso Adjudicada *
                     </label>
                     <div className="relative">
-                      <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <KeyRound className="w-4 h-4 text-graphite-400 absolute left-3.5 top-3" />
                       <input
                         type="password"
                         required
                         value={userAccessKey}
                         onChange={(e) => setUserAccessKey(e.target.value)}
                         placeholder="Introduce tu clave de usuario"
-                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-graphite-300 text-sm focus:ring-2 focus:ring-oterio-500 focus:border-oterio-500 bg-graphite-50/50"
                       />
                     </div>
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 shadow-md shadow-emerald-100 transition-all cursor-pointer"
+                    className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold text-white bg-graphite-900 hover:bg-graphite-800 active:scale-95 shadow-md shadow-graphite-200 transition-all cursor-pointer"
                   >
                     <LogIn className="w-4 h-4" />
                     <span>Entrar como Operario / Empleado</span>
@@ -275,28 +269,28 @@ export const LoginView: React.FC = () => {
                 <form onSubmit={handleAdminLoginSubmit} className="space-y-4">
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
                       Código de Empresa *
                     </label>
                     <div className="relative">
-                      <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <Building2 className="w-4 h-4 text-graphite-400 absolute left-3.5 top-3" />
                       <input
                         type="text"
                         required
                         value={adminCompanyCode}
                         onChange={(e) => setAdminCompanyCode(e.target.value.toUpperCase())}
                         placeholder="Ej. EMPRESA01"
-                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold tracking-wider focus:ring-2 focus:ring-indigo-500 bg-slate-50/50 uppercase"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-graphite-300 text-sm font-mono font-bold tracking-wider focus:ring-2 focus:ring-oterio-500 focus:border-oterio-500 bg-graphite-50/50 uppercase"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
                       CIF/NIF de la Empresa *
                     </label>
                     <div className="relative">
-                      <FileText className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <FileText className="w-4 h-4 text-graphite-400 absolute left-3.5 top-3" />
                       <input
                         type="text"
                         required
@@ -304,14 +298,14 @@ export const LoginView: React.FC = () => {
                         value={adminCif}
                         onChange={(e) => setAdminCif(e.target.value.toUpperCase())}
                         placeholder="Ej. B12345678 o 12345678Z"
-                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold uppercase focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-graphite-300 text-sm font-mono font-bold uppercase focus:ring-2 focus:ring-oterio-500 focus:border-oterio-500 bg-graphite-50/50"
                       />
                     </div>
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider">
                         Contraseña *
                       </label>
                       <button
@@ -322,27 +316,27 @@ export const LoginView: React.FC = () => {
                           setRecCif(adminCif);
                           setRecMessage(null);
                         }}
-                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                        className="text-xs font-semibold text-oterio-600 hover:text-oterio-800 hover:underline cursor-pointer"
                       >
                         ¿Olvidaste tu contraseña?
                       </button>
                     </div>
                     <div className="relative">
-                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <Lock className="w-4 h-4 text-graphite-400 absolute left-3.5 top-3" />
                       <input
                         type="password"
                         required
                         value={adminPassword}
                         onChange={(e) => setAdminPassword(e.target.value)}
                         placeholder="••••••••"
-                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-graphite-300 text-sm focus:ring-2 focus:ring-oterio-500 focus:border-oterio-500 bg-graphite-50/50"
                       />
                     </div>
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 shadow-md shadow-indigo-100 transition-all cursor-pointer"
+                    className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold text-white bg-oterio-600 hover:bg-oterio-700 active:scale-95 shadow-md shadow-oterio-100 transition-all cursor-pointer"
                   >
                     <LogIn className="w-4 h-4" />
                     <span>Entrar como Administrador</span>
@@ -351,9 +345,9 @@ export const LoginView: React.FC = () => {
               )}
 
               {/* Registro de nueva empresa y administrador */}
-              <div className="mt-6 pt-5 border-t border-slate-100 text-center">
-                <p className="text-xs text-slate-500 mb-2">
-                  ¿Quieres dar de alta una nueva empresa en OPERIO?
+              <div className="mt-6 pt-5 border-t border-graphite-100 text-center">
+                <p className="text-xs text-graphite-500 mb-2">
+                  ¿Quieres dar de alta una nueva empresa en Oterio?
                 </p>
                 <button
                   onClick={() => {
@@ -361,7 +355,7 @@ export const LoginView: React.FC = () => {
                     setRegError('');
                     setRegSuccess('');
                   }}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100/70 px-3.5 py-2 rounded-xl transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-oterio-600 hover:text-oterio-800 bg-oterio-50 hover:bg-oterio-100/70 px-3.5 py-2 rounded-xl transition-colors cursor-pointer"
                 >
                   <UserPlus className="w-4 h-4" />
                   <span>Registrar Nueva Empresa y Administrador</span>
@@ -378,16 +372,16 @@ export const LoginView: React.FC = () => {
               <div className="flex items-center gap-2 mb-4">
                 <button
                   onClick={() => setMode('login')}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className="p-1 rounded-lg text-graphite-400 hover:text-graphite-700 hover:bg-graphite-100 cursor-pointer"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">
+                  <h3 className="text-lg font-bold text-graphite-900">
                     Registrar Nueva Empresa
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Crea tu empresa asignándole un código único y tu perfil de administrador.
+                  <p className="text-xs text-graphite-500">
+                    Crea tu empresa asignándole un código y tu perfil de administrador.
                   </p>
                 </div>
               </div>
@@ -400,14 +394,14 @@ export const LoginView: React.FC = () => {
 
               <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
                 {/* 1. Datos de la empresa */}
-                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 flex items-center gap-1.5">
+                <div className="p-3.5 bg-graphite-50 rounded-2xl border border-graphite-200 space-y-3">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-oterio-700 flex items-center gap-1.5">
                     <Building2 className="w-3.5 h-3.5" />
                     Datos de la Empresa
                   </span>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1">
                       Nombre de la Empresa *
                     </label>
                     <input
@@ -416,13 +410,13 @@ export const LoginView: React.FC = () => {
                       value={regCompanyName}
                       onChange={(e) => setRegCompanyName(e.target.value)}
                       placeholder="Ej. Taller Mecánico Industrial S.L."
-                      className="w-full text-xs sm:text-sm px-3.5 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
+                      className="w-full text-xs sm:text-sm px-3.5 py-2 rounded-xl border border-graphite-300 bg-white focus:ring-2 focus:ring-oterio-500"
                     />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1">
                         Código de Empresa *
                       </label>
                       <input
@@ -431,12 +425,12 @@ export const LoginView: React.FC = () => {
                         value={regCompanyCode}
                         onChange={(e) => setRegCompanyCode(e.target.value.toUpperCase())}
                         placeholder="Ej. EMPRESA01"
-                        className="w-full text-xs sm:text-sm font-mono font-bold px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500 uppercase"
+                        className="w-full text-xs sm:text-sm font-mono font-bold px-3 py-2 rounded-xl border border-graphite-300 bg-white focus:ring-2 focus:ring-oterio-500 uppercase"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1">
                         Confirmar Código *
                       </label>
                       <input
@@ -445,14 +439,14 @@ export const LoginView: React.FC = () => {
                         value={regCompanyCodeConfirm}
                         onChange={(e) => setRegCompanyCodeConfirm(e.target.value.toUpperCase())}
                         placeholder="Repite el código"
-                        className="w-full text-xs sm:text-sm font-mono font-bold px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500 uppercase"
+                        className="w-full text-xs sm:text-sm font-mono font-bold px-3 py-2 rounded-xl border border-graphite-300 bg-white focus:ring-2 focus:ring-oterio-500 uppercase"
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1">
                         CIF/NIF de la Empresa * (1/2)
                       </label>
                       <input
@@ -462,12 +456,12 @@ export const LoginView: React.FC = () => {
                         value={regCif}
                         onChange={(e) => setRegCif(e.target.value.toUpperCase())}
                         placeholder="Ej. B12345678 o 12345678Z"
-                        className="w-full text-xs sm:text-sm font-mono font-bold px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500 uppercase"
+                        className="w-full text-xs sm:text-sm font-mono font-bold px-3 py-2 rounded-xl border border-graphite-300 bg-white focus:ring-2 focus:ring-oterio-500 uppercase"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1">
                         Confirmar CIF/NIF * (2/2)
                       </label>
                       <input
@@ -477,24 +471,24 @@ export const LoginView: React.FC = () => {
                         value={regCifConfirm}
                         onChange={(e) => setRegCifConfirm(e.target.value.toUpperCase())}
                         placeholder="Repite el CIF/NIF"
-                        className="w-full text-xs sm:text-sm font-mono font-bold px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500 uppercase"
+                        className="w-full text-xs sm:text-sm font-mono font-bold px-3 py-2 rounded-xl border border-graphite-300 bg-white focus:ring-2 focus:ring-oterio-500 uppercase"
                       />
                     </div>
                   </div>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-graphite-500">
                     Obligatorio: letra y 8 números (CIF) u 8 números y letra (NIF). Identificador único de la empresa.
                   </p>
                 </div>
 
                 {/* 2. Datos del administrador */}
-                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 flex items-center gap-1.5">
+                <div className="p-3.5 bg-graphite-50 rounded-2xl border border-graphite-200 space-y-3">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-oterio-700 flex items-center gap-1.5">
                     <Shield className="w-3.5 h-3.5" />
                     Perfil del Administrador
                   </span>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1">
                       Nombre del Administrador *
                     </label>
                     <input
@@ -503,13 +497,13 @@ export const LoginView: React.FC = () => {
                       value={regAdminName}
                       onChange={(e) => setRegAdminName(e.target.value)}
                       placeholder="Ej. Nombre y Apellidos"
-                      className="w-full text-xs sm:text-sm px-3.5 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
+                      className="w-full text-xs sm:text-sm px-3.5 py-2 rounded-xl border border-graphite-300 bg-white focus:ring-2 focus:ring-oterio-500"
                     />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1">
                         Contraseña * (1/2)
                       </label>
                       <input
@@ -518,12 +512,12 @@ export const LoginView: React.FC = () => {
                         value={regAdminPassword}
                         onChange={(e) => setRegAdminPassword(e.target.value)}
                         placeholder="Mínimo 4 caracteres"
-                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
+                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-graphite-300 bg-white focus:ring-2 focus:ring-oterio-500"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1">
                         Confirmar Contraseña * (2/2)
                       </label>
                       <input
@@ -532,7 +526,7 @@ export const LoginView: React.FC = () => {
                         value={regAdminPasswordConfirm}
                         onChange={(e) => setRegAdminPasswordConfirm(e.target.value)}
                         placeholder="Repite la contraseña"
-                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-500"
+                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-graphite-300 bg-white focus:ring-2 focus:ring-oterio-500"
                       />
                     </div>
                   </div>
@@ -542,14 +536,14 @@ export const LoginView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setMode('login')}
-                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                    className="px-4 py-2 text-xs font-semibold text-graphite-600 hover:bg-graphite-100 rounded-xl cursor-pointer"
                   >
                     Volver al login
                   </button>
 
                   <button
                     type="submit"
-                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-oterio-600 hover:bg-oterio-700 shadow-sm cursor-pointer"
                   >
                     Dar de Alta Empresa y Admin
                   </button>
@@ -566,15 +560,15 @@ export const LoginView: React.FC = () => {
               <div className="flex items-center gap-2 mb-4">
                 <button
                   onClick={() => setMode('login')}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className="p-1 rounded-lg text-graphite-400 hover:text-graphite-700 hover:bg-graphite-100 cursor-pointer"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">
+                  <h3 className="text-lg font-bold text-graphite-900">
                     Restaurar Contraseña de Administrador
                   </h3>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-graphite-500">
                     Introduce el código de empresa y el CIF/NIF de la empresa.
                   </p>
                 </div>
@@ -594,7 +588,7 @@ export const LoginView: React.FC = () => {
 
               <form onSubmit={handleRecoverySubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
                     Código de Empresa *
                   </label>
                   <input
@@ -603,12 +597,12 @@ export const LoginView: React.FC = () => {
                     value={recCompanyCode}
                     onChange={(e) => setRecCompanyCode(e.target.value.toUpperCase())}
                     placeholder="Ej. EMPRESA01"
-                    className="w-full text-xs sm:text-sm font-mono font-bold px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 uppercase"
+                    className="w-full text-xs sm:text-sm font-mono font-bold px-3.5 py-2.5 rounded-xl border border-graphite-300 focus:ring-2 focus:ring-oterio-500 uppercase"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
                     CIF/NIF de la Empresa *
                   </label>
                   <input
@@ -617,7 +611,7 @@ export const LoginView: React.FC = () => {
                     value={recCif}
                     onChange={(e) => setRecCif(e.target.value.toUpperCase())}
                     placeholder="Ej. B12345678"
-                    className="w-full text-xs sm:text-sm font-mono font-bold uppercase px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                    className="w-full text-xs sm:text-sm font-mono font-bold uppercase px-3.5 py-2.5 rounded-xl border border-graphite-300 focus:ring-2 focus:ring-oterio-500"
                   />
                 </div>
 
@@ -625,14 +619,14 @@ export const LoginView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setMode('login')}
-                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                    className="px-4 py-2 text-xs font-semibold text-graphite-600 hover:bg-graphite-100 rounded-xl cursor-pointer"
                   >
                     Volver al Login
                   </button>
 
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm cursor-pointer"
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-oterio-600 hover:bg-oterio-700 shadow-sm cursor-pointer"
                   >
                     Restablecer Contraseña
                   </button>

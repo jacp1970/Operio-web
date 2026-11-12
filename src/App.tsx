@@ -69,7 +69,7 @@ function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col lg:flex-row antialiased selection:bg-indigo-100 selection:text-indigo-900">
+    <div className="min-h-screen bg-graphite-50 text-graphite-900 flex flex-col lg:flex-row antialiased selection:bg-oterio-100 selection:text-oterio-900">
       {/* Lateral Menu / Sidebar (strictly follows PDF ordering and role permissions) */}
       <Sidebar
         mobileOpen={mobileSidebarOpen}

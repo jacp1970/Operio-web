@@ -51,15 +51,15 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
 
   if (!currentUser || currentUser.role !== 'administrador' || !currentCompany) {
     return (
-      <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center max-w-xl mx-auto mt-12 shadow-sm">
+      <div className="bg-white rounded-3xl border border-graphite-200 p-8 text-center max-w-xl mx-auto mt-12 shadow-sm">
         <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto mb-3" />
-        <h2 className="text-xl font-bold text-slate-800">Acceso Restringido</h2>
-        <p className="text-sm text-slate-500 mt-2">
+        <h2 className="text-xl font-bold text-graphite-900">Acceso Restringido</h2>
+        <p className="text-sm text-graphite-500 mt-2">
           Solo el usuario con rol de Administrador puede gestionar el reseteo o borrado de la empresa.
         </p>
         <button
           onClick={onCancel}
-          className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition-colors cursor-pointer"
+          className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-oterio-600 text-white font-medium hover:bg-oterio-700 transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           Volver al Panel
@@ -124,16 +124,16 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
         <div>
           <button
             onClick={onCancel}
-            className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors mb-2 cursor-pointer"
+            className="inline-flex items-center gap-2 text-xs font-bold text-graphite-500 hover:text-graphite-900 transition-colors mb-2 cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Volver al Panel de Control</span>
           </button>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-graphite-900 tracking-tight flex items-center gap-2.5">
             <ShieldAlert className="w-7 h-7 text-rose-600 shrink-0" />
             <span>Gestión Crítica: Resetear o Borrar Empresa</span>
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-sm text-graphite-500 mt-1">
             Desde esta pantalla puedes dar continuidad a cualquiera de los dos procesos según tus necesidades, o cancelar para regresar.
           </p>
         </div>
@@ -141,23 +141,23 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
         <button
           onClick={onCancel}
           type="button"
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer shrink-0"
+          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-graphite-300 bg-white hover:bg-graphite-50 text-graphite-700 text-sm font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer shrink-0"
         >
-          <ArrowLeft className="w-4 h-4 text-slate-500" />
+          <ArrowLeft className="w-4 h-4 text-graphite-500" />
           <span>Cancelar y no hacer nada</span>
         </button>
       </div>
 
       {/* Company Summary Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-3xl p-6 text-white shadow-lg border border-slate-800">
+      <div className="bg-gradient-to-r from-graphite-950 via-graphite-900 to-oterio-950 rounded-3xl p-6 text-white shadow-lg border border-graphite-800">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-start gap-4">
-            <div className="p-3.5 rounded-2xl bg-white/10 backdrop-blur-xs text-indigo-300 shrink-0 border border-white/10">
+            <div className="p-3.5 rounded-2xl bg-white/10 backdrop-blur-xs text-oterio-300 shrink-0 border border-white/10">
               <Building2 className="w-7 h-7" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-oterio-600/35 text-oterio-200 border border-oterio-400/35">
                   Empresa activa
                 </span>
                 <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded-md bg-white/15 text-white">
@@ -165,28 +165,28 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
                 </span>
               </div>
               <h2 className="text-xl font-bold mt-1 text-white">{currentCompany.name}</h2>
-              <p className="text-xs text-slate-300 mt-0.5">
+              <p className="text-xs text-graphite-300 mt-0.5">
                 Administrador en sesión: <span className="font-semibold text-white">{currentUser.name}</span> (CIF: {currentCompany.cif || '-'})
               </p>
             </div>
           </div>
 
           {/* Quick Metrics */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white/5 p-3.5 rounded-2xl border border-white/10">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white/5 p-3.5 rounded-2xl border border-white/10 tabular-nums">
             <div className="text-center px-2">
-              <span className="text-xs text-slate-400 block font-medium">Partes OT</span>
+              <span className="text-xs text-graphite-400 block font-medium">Partes OT</span>
               <span className="text-lg font-bold text-white">{workOrders.length}</span>
             </div>
             <div className="text-center px-2 border-l border-white/10">
-              <span className="text-xs text-slate-400 block font-medium">Departamentos</span>
+              <span className="text-xs text-graphite-400 block font-medium">Departamentos</span>
               <span className="text-lg font-bold text-white">{departments.length}</span>
             </div>
             <div className="text-center px-2 border-l border-white/10">
-              <span className="text-xs text-slate-400 block font-medium">Estados</span>
+              <span className="text-xs text-graphite-400 block font-medium">Estados</span>
               <span className="text-lg font-bold text-white">{statuses.length}</span>
             </div>
             <div className="text-center px-2 border-l border-white/10">
-              <span className="text-xs text-slate-400 block font-medium">Operarios</span>
+              <span className="text-xs text-graphite-400 block font-medium">Operarios</span>
               <span className="text-lg font-bold text-white">{operariosCount}</span>
             </div>
           </div>
@@ -225,20 +225,20 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
               </span>
             </div>
 
-            <h3 className="text-lg font-bold text-slate-900">
+            <h3 className="text-lg font-bold text-graphite-900">
               Resetear y Limpiar Datos Operativos
             </h3>
-            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+            <p className="text-xs text-graphite-500 mt-2 leading-relaxed">
               Ideal si deseas <strong>iniciar un nuevo ciclo o año operativo</strong> sin borrar tu empresa ni tener que volver a registrarte.
             </p>
 
             {/* What is deleted */}
-            <div className="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5 text-xs">
-              <p className="font-bold text-slate-800 flex items-center gap-1.5">
+            <div className="mt-4 p-4 rounded-2xl bg-graphite-50 border border-graphite-200/80 space-y-2.5 text-xs">
+              <p className="font-bold text-graphite-800 flex items-center gap-1.5">
                 <Info className="w-4 h-4 text-amber-600 shrink-0" />
                 ¿Qué se elimina al resetear?
               </p>
-              <ul className="space-y-1.5 text-slate-600 pl-5 list-disc marker:text-amber-500">
+              <ul className="space-y-1.5 text-graphite-600 pl-5 list-disc marker:text-amber-500">
                 <li>
                   <strong>Todos los {workOrders.length} partes de trabajo</strong> (OTs) y sus PDFs adjuntos.
                 </li>
@@ -253,35 +253,35 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
 
             {/* Options */}
             <div className="mt-4 space-y-3">
-              <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer text-xs">
+              <label className="flex items-start gap-3 p-3 rounded-xl border border-graphite-200 hover:bg-graphite-50 transition-colors cursor-pointer text-xs">
                 <input
                   type="checkbox"
                   checked={resetDeptsAndStatuses}
                   onChange={(e) => setResetDeptsAndStatuses(e.target.checked)}
-                  className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  className="mt-0.5 rounded border-graphite-300 text-oterio-600 focus:ring-oterio-500"
                 />
                 <div>
-                  <span className="font-bold text-slate-800 block">
+                  <span className="font-bold text-graphite-800 block">
                     Restablecer departamentos y estados de fábrica
                   </span>
-                  <span className="text-slate-500">
+                  <span className="text-graphite-500">
                     Crea los departamentos y estados estándar por defecto (Mecanizado, Montaje, Calidad / Pendiente, En curso, Terminado).
                   </span>
                 </div>
               </label>
 
-              <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer text-xs">
+              <label className="flex items-start gap-3 p-3 rounded-xl border border-graphite-200 hover:bg-graphite-50 transition-colors cursor-pointer text-xs">
                 <input
                   type="checkbox"
                   checked={removeOperarios}
                   onChange={(e) => setRemoveOperarios(e.target.checked)}
-                  className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  className="mt-0.5 rounded border-graphite-300 text-oterio-600 focus:ring-oterio-500"
                 />
                 <div>
-                  <span className="font-bold text-slate-800 block">
+                  <span className="font-bold text-graphite-800 block">
                     Limpiar también los operarios registrados ({operariosCount})
                   </span>
-                  <span className="text-slate-500">
+                  <span className="text-graphite-500">
                     Elimina las cuentas de operarios para configurarlas de nuevo. Tu cuenta de administrador se mantendrá intacta.
                   </span>
                 </div>
@@ -296,7 +296,7 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
           </div>
 
           {/* Action Trigger */}
-          <div className="mt-6 pt-5 border-t border-slate-100">
+          <div className="mt-6 pt-5 border-t border-graphite-100">
             {!resetStepConfirm ? (
               <button
                 type="button"
@@ -335,7 +335,7 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
                     type="button"
                     onClick={() => setResetStepConfirm(false)}
                     disabled={isResetting}
-                    className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                    className="px-3.5 py-2.5 rounded-xl border border-graphite-300 bg-white hover:bg-graphite-50 text-graphite-700 text-xs font-semibold transition-colors cursor-pointer"
                   >
                     Atrás
                   </button>
@@ -362,10 +362,10 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
               </span>
             </div>
 
-            <h3 className="text-lg font-bold text-slate-900">
+            <h3 className="text-lg font-bold text-graphite-900">
               Borrar Empresa Definitivamente
             </h3>
-            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+            <p className="text-xs text-graphite-500 mt-2 leading-relaxed">
               Elimina de forma <strong>permanente y total</strong> la empresa de la base de datos sincronizada. Nadie podrá volver a entrar con las credenciales actuales.
             </p>
 
@@ -396,9 +396,9 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
 
             {/* Safety Code Input */}
             <div className="mt-5 space-y-2">
-              <label className="block text-xs font-bold text-slate-700">
+              <label className="block text-xs font-bold text-graphite-700">
                 Para confirmar la eliminación permanente, escribe el código de la empresa:{' '}
-                <span className="font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-800 select-all font-bold">
+                <span className="font-mono px-2 py-0.5 rounded bg-graphite-100 text-graphite-900 select-all font-bold">
                   {currentCompany.code}
                 </span>
               </label>
@@ -407,7 +407,7 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
                 value={deleteConfirmCode}
                 onChange={(e) => setDeleteConfirmCode(e.target.value.toUpperCase())}
                 placeholder={`Escribe ${currentCompany.code} aquí`}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 text-xs font-mono font-bold tracking-wider uppercase transition-all"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-graphite-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 text-xs font-mono font-bold tracking-wider uppercase transition-all"
                 disabled={isDeleting}
               />
             </div>
@@ -420,7 +420,7 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
           </div>
 
           {/* Action Trigger */}
-          <div className="mt-6 pt-5 border-t border-slate-100">
+          <div className="mt-6 pt-5 border-t border-graphite-100">
             <button
               type="button"
               onClick={handleExecuteDeleteCompany}
@@ -444,9 +444,9 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
       </div>
 
       {/* Reassuring Footer with Cancel button */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3 text-xs text-slate-500">
-          <Info className="w-4 h-4 text-slate-400 shrink-0" />
+      <div className="bg-white rounded-2xl border border-graphite-200 p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3 text-xs text-graphite-500">
+          <Info className="w-4 h-4 text-graphite-400 shrink-0" />
           <span>
             ¿No estás seguro de proceder? Puedes cancelar en cualquier momento sin que se modifique ningún dato de la empresa.
           </span>
@@ -454,7 +454,7 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
         <button
           onClick={onCancel}
           type="button"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs sm:text-sm font-bold transition-colors cursor-pointer shrink-0"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-graphite-100 hover:bg-graphite-200 text-graphite-800 text-xs sm:text-sm font-bold transition-colors cursor-pointer shrink-0"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Cancelar y volver al Panel</span>

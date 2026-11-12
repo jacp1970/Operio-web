@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { WorkOrder, PdfAttachment, WorkOrderTimer, WorkOrderTimeSession } from '../types';
-import { parsePdfClientSide } from '../utils/pdfExtractor';
 import {
   formatSecondsToHMS,
   formatSecondsToHuman,
@@ -54,7 +53,6 @@ export const JobModal: React.FC<JobModalProps> = ({
     createWorkOrder,
     updateWorkOrder,
     deleteWorkOrder,
-    uploadJobPdf,
     deleteJobPdf,
     getJobParticipants,
     getDepartmentName,
@@ -85,10 +83,12 @@ export const JobModal: React.FC<JobModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // PDF Attachment and client-side extraction state
+  // PDF Attachment and Gemini multimodal extraction state
   const [attachedPdf, setAttachedPdf] = useState<PdfAttachment | null>(null);
   const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
   const [pdfSuccessNotice, setPdfSuccessNotice] = useState<string | null>(null);
+  const [pdfErrorNotice, setPdfErrorNotice] = useState<string | null>(null);
+  const [hasAnalyzedPdf, setHasAnalyzedPdf] = useState(false);
 
   // Stopwatch / Cronómetro state
   const [timer, setTimer] = useState<WorkOrderTimer | undefined>(job?.timer);
@@ -103,6 +103,8 @@ export const JobModal: React.FC<JobModalProps> = ({
     setShowDeleteConfirm(false);
     setIsAnalyzingPdf(false);
     setPdfSuccessNotice(null);
+    setPdfErrorNotice(null);
+    setHasAnalyzedPdf(false);
     setShowResetConfirm(false);
     setShowSessionsList(false);
 
@@ -239,63 +241,81 @@ export const JobModal: React.FC<JobModalProps> = ({
   };
 
   /**
-   * Client-side PDF Extraction: parses PDF text locally in the browser with no API keys or credits
+   * Multimodal PDF Extraction via server-side Gemini Flash API (/api/extract-work-order-pdf)
+   * Populates ONLY the 5 specified form fields without touching any other field or auto-saving.
    */
-  const extractDataFromPdfLocally = async (fileOrDataUrl: File | string, fileName: string) => {
+  const extractDataFromPdfWithGemini = async (pdfDataUrl: string, fileName: string) => {
     setIsAnalyzingPdf(true);
     setPdfSuccessNotice(null);
+    setPdfErrorNotice(null);
     setErrorMessage('');
 
     try {
-      const ext = await parsePdfClientSide(fileOrDataUrl, fileName);
+      const response = await fetch('/api/extract-work-order-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pdfBase64: pdfDataUrl,
+          fileName,
+        }),
+      });
 
-      let detectedFields = 0;
-      let dateNotice = '';
+      const payload = await response.json().catch(() => ({}));
 
-      if (ext.ot && ext.ot.trim()) {
-        setOt(ext.ot.trim().toUpperCase());
-        detectedFields++;
-      }
-      if (ext.client && ext.client.trim()) {
-        setClient(ext.client.trim());
-        detectedFields++;
-      }
-      // Creation date: update if different from current
-      if (ext.creationDate && ext.creationDate.trim()) {
-        const pdfDate = ext.creationDate.trim();
-        if (pdfDate !== createdAt) {
-          setCreatedAt(pdfDate);
-          detectedFields++;
-          dateNotice = ` Fecha de creación actualizada a ${pdfDate} según el PDF.`;
-          if (job) {
-            updateWorkOrder(job.id, { createdAt: new Date(pdfDate).toISOString() });
-          }
-        }
-      }
-      if (ext.deliveryDate && ext.deliveryDate.trim()) {
-        setDeliveryDate(ext.deliveryDate.trim());
-        detectedFields++;
-      }
-      if (ext.isUrgent !== undefined) {
-        setIsUrgent(Boolean(ext.isUrgent));
-      }
-      if (ext.notes && ext.notes.trim()) {
-        setNotes(ext.notes.trim());
-        detectedFields++;
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ||
+            'No se pudo analizar el archivo PDF con Gemini. Puedes completar los campos manualmente.'
+        );
       }
 
-      if (detectedFields > 0) {
+      const extractedOt = typeof payload.ot === 'string' && payload.ot.trim() ? payload.ot.trim().toUpperCase() : '';
+      const extractedClient = typeof payload.client === 'string' && payload.client.trim() ? payload.client.trim() : '';
+      const extractedCreatedAt = typeof payload.createdAt === 'string' && payload.createdAt.trim() ? payload.createdAt.trim() : '';
+      const extractedDeliveryDate =
+        typeof payload.deliveryDate === 'string' && payload.deliveryDate.trim() ? payload.deliveryDate.trim() : '';
+      const extractedNotes = typeof payload.notes === 'string' && payload.notes.trim() ? payload.notes.trim() : '';
+
+      // Apply strictly to the 5 form fields (if null, leave field empty; do NOT touch other fields)
+      setOt(extractedOt);
+      setClient(extractedClient);
+      setCreatedAt(extractedCreatedAt);
+      setDeliveryDate(extractedDeliveryDate);
+      setNotes(extractedNotes);
+      setHasAnalyzedPdf(true);
+
+      const detectedCount = [
+        extractedOt,
+        extractedClient,
+        extractedCreatedAt,
+        extractedDeliveryDate,
+        extractedNotes,
+      ].filter(Boolean).length;
+
+      const missingMainFields: string[] = [];
+      if (!extractedOt) missingMainFields.push('Nº OT');
+      if (!extractedClient) missingMainFields.push('Cliente');
+      if (!extractedCreatedAt) missingMainFields.push('Fecha de entrada');
+
+      if (detectedCount > 0) {
+        const missingWarning =
+          missingMainFields.length > 0
+            ? ` Faltan por detectar: ${missingMainFields.join(', ')}.`
+            : '';
         setPdfSuccessNotice(
-          `✨ Datos identificados y autorellenados localmente en el navegador (100% autónomo, sin API ni créditos).${dateNotice} Recuerda asignar operario, departamento y alertas manualmente.`
+          `Datos extraídos con Gemini Flash para revisión.${missingWarning} Comprueba la información antes de pulsar guardar.`
         );
       } else {
         setPdfSuccessNotice(
-          'Archivo PDF adjuntado correctamente. Puedes completar los campos manualmente a continuación.'
+          'El PDF se ha adjuntado, pero no se encontraron datos de orden de trabajo. Completa los campos manualmente antes de guardar.'
         );
       }
     } catch (err: any) {
-      console.warn('Client-side PDF extraction error:', err);
-      setPdfSuccessNotice('Archivo PDF adjuntado. Puedes completar los datos manualmente.');
+      console.error('Error analyzing PDF with Gemini:', err);
+      setPdfErrorNotice(
+        err?.message ||
+          'Ha ocurrido un error al procesar el archivo PDF con IA. Puedes completar los datos manualmente.'
+      );
     } finally {
       setIsAnalyzingPdf(false);
     }
@@ -314,6 +334,9 @@ export const JobModal: React.FC<JobModalProps> = ({
     }
 
     const reader = new FileReader();
+    reader.onerror = () => {
+      setPdfErrorNotice('No se pudo leer el archivo PDF seleccionado desde el dispositivo.');
+    };
     reader.onload = async () => {
       const pdfDataUrl = reader.result as string;
 
@@ -326,12 +349,8 @@ export const JobModal: React.FC<JobModalProps> = ({
 
       setAttachedPdf(attachment);
 
-      if (job) {
-        await uploadJobPdf(job.id, file);
-      }
-
-      // Automatically trigger client-side extraction on uploaded PDF for both new and existing jobs
-      await extractDataFromPdfLocally(file, file.name);
+      // Trigger multimodal Gemini extraction; user will review and manually confirm saving
+      await extractDataFromPdfWithGemini(pdfDataUrl, file.name);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -354,6 +373,8 @@ export const JobModal: React.FC<JobModalProps> = ({
       deleteJobPdf(job.id);
     }
     setPdfSuccessNotice(null);
+    setPdfErrorNotice(null);
+    setHasAnalyzedPdf(false);
   };
 
   const handleSave = () => {
@@ -401,7 +422,7 @@ export const JobModal: React.FC<JobModalProps> = ({
         notes,
         statusId,
         pdfAttachment: attachedPdf || undefined,
-        createdAt: createdAt ? new Date(createdAt).toISOString() : undefined,
+        ...(createdAt ? { createdAt: new Date(createdAt).toISOString() } : {}),
         timer,
       };
 
@@ -499,20 +520,20 @@ export const JobModal: React.FC<JobModalProps> = ({
   const currentAttachment = attachedPdf || job?.pdfAttachment;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-graphite-950/60 backdrop-blur-xs overflow-y-auto">
+      <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-graphite-200/90 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-graphite-100 bg-graphite-50/70">
           <div className="flex items-center gap-3">
-            <span className="font-mono text-sm font-bold bg-white text-indigo-700 px-3 py-1 rounded-xl border border-indigo-100 shadow-2xs">
+            <span className="font-mono text-sm font-bold bg-white text-oterio-700 px-3 py-1 rounded-xl border border-oterio-200 shadow-2xs">
               {isCreating ? ot || 'NUEVA OT' : job?.ot}
             </span>
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-slate-900">
+              <h2 className="text-base sm:text-lg font-bold text-graphite-900">
                 {isCreating ? 'Nueva Orden de Trabajo' : 'Detalles de la Orden de Trabajo'}
               </h2>
               {isCreating && (
-                <p className="text-[11px] text-slate-500 hidden sm:block">
+                <p className="text-[11px] text-graphite-500 hidden sm:block">
                   Sube el PDF para autorellenar datos o introduce la información manualmente
                 </p>
               )}
@@ -521,7 +542,7 @@ export const JobModal: React.FC<JobModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
+            className="p-2 rounded-xl text-graphite-400 hover:text-graphite-700 hover:bg-graphite-200/60 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -535,18 +556,34 @@ export const JobModal: React.FC<JobModalProps> = ({
             </div>
           )}
 
-          {/* Client-Side PDF Auto-fill Status */}
+          {/* Multimodal Gemini PDF Auto-fill Status */}
           {isAnalyzingPdf && (
-            <div className="p-4 rounded-2xl bg-indigo-50/90 border border-indigo-200/90 flex items-center gap-3 animate-pulse">
-              <Loader2 className="w-5 h-5 text-indigo-600 animate-spin shrink-0" />
+            <div className="p-4 rounded-2xl bg-oterio-50/90 border border-oterio-200/90 flex items-center gap-3 animate-pulse">
+              <Loader2 className="w-5 h-5 text-oterio-600 animate-spin shrink-0" />
               <div>
-                <p className="text-xs font-bold text-indigo-950">
-                  Leyendo archivo PDF localmente en el navegador...
+                <p className="text-xs font-bold text-oterio-950">
+                  Analizando archivo PDF con Gemini Flash...
                 </p>
-                <p className="text-[11px] text-indigo-700">
-                  Extrayendo datos de forma 100% autónoma en el cliente (sin claves de API ni consumo de créditos).
+                <p className="text-[11px] text-oterio-700">
+                  Extrayendo Nº OT, cliente, fechas y descripción del trabajo para tu revisión antes de guardar.
                 </p>
               </div>
+            </div>
+          )}
+
+          {pdfErrorNotice && !isAnalyzingPdf && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 flex items-start justify-between gap-2 text-xs text-rose-800 animate-in fade-in">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span>{pdfErrorNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPdfErrorNotice(null)}
+                className="text-rose-600 hover:text-rose-800 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 
@@ -575,7 +612,7 @@ export const JobModal: React.FC<JobModalProps> = ({
           )}
 
           {isAdministrativo && !isCreating && (
-            <div className="p-3 bg-blue-50/80 border border-blue-200/70 rounded-xl text-xs text-blue-800 flex items-center gap-2">
+            <div className="p-3 bg-graphite-100/80 border border-graphite-300/70 rounded-xl text-xs text-graphite-800 flex items-center gap-2">
               <span className="font-bold">Permisos de Administrativo:</span>
               Mismos accesos que un operario (cambiar operario, departamento, alertas, notas y cronómetro) más la creación de órdenes de trabajo.
             </div>
@@ -589,33 +626,33 @@ export const JobModal: React.FC<JobModalProps> = ({
           )}
 
           {/* ATTACHMENT CARD: Subir archivo PDF */}
-          <div className="p-4 rounded-2xl bg-slate-50/90 border border-slate-200">
+          <div className="p-4 rounded-2xl bg-graphite-50/90 border border-graphite-200">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
               <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-indigo-600" />
-                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                <FileText className="w-4 h-4 text-oterio-600" />
+                <span className="text-xs font-bold text-graphite-800 uppercase tracking-wider">
                   Archivo adjunto en PDF (Plano / Hoja de Proceso)
                 </span>
               </div>
               {isCreating && (
-                <span className="text-[11px] font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100 flex items-center gap-1 self-start sm:self-auto">
-                  <Sparkles className="w-3 h-3 text-indigo-500" />
+                <span className="text-[11px] font-medium text-oterio-700 bg-oterio-50 px-2 py-0.5 rounded-md border border-oterio-200 flex items-center gap-1 self-start sm:self-auto">
+                  <Sparkles className="w-3 h-3 text-oterio-600" />
                   Autocompletar tras subida
                 </span>
               )}
             </div>
 
             {currentAttachment ? (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-graphite-200 shadow-2xs">
                 <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 shrink-0">
+                  <div className="p-2.5 rounded-xl bg-oterio-50 text-oterio-600 shrink-0">
                     <FileText className="w-5 h-5" />
                   </div>
                   <div className="overflow-hidden">
-                    <p className="text-xs font-bold text-slate-900 truncate">
+                    <p className="text-xs font-bold text-graphite-900 truncate">
                       {currentAttachment.name}
                     </p>
-                    <p className="text-[11px] text-slate-400">
+                    <p className="text-[11px] text-graphite-400">
                       {Math.round(currentAttachment.size / 1024)} KB · Adjuntado el{' '}
                       {new Date(currentAttachment.uploadedAt).toLocaleDateString()}
                     </p>
@@ -627,7 +664,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                     <button
                       type="button"
                       onClick={() => onOpenPdfViewer(currentAttachment)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-graphite-100 text-graphite-700 hover:bg-graphite-200 transition-colors cursor-pointer"
                     >
                       <Eye className="w-3.5 h-3.5" />
                       <span>Ver</span>
@@ -637,7 +674,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                   <button
                     type="button"
                     onClick={handleDownloadPdf}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-oterio-50 text-oterio-700 hover:bg-oterio-100 transition-colors cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Descargar</span>
@@ -657,7 +694,7 @@ export const JobModal: React.FC<JobModalProps> = ({
               </div>
             ) : (
               <div className="space-y-3">
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-graphite-500">
                   Adjunta el archivo en formato PDF. Al subirlo, la aplicación identificará los datos del trabajo y autorellenará la orden automáticamente. Si no dispones de PDF, puedes rellenar todos los campos manualmente.
                 </p>
 
@@ -667,7 +704,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isAnalyzingPdf}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer shadow-xs transition-all active:scale-95 disabled:opacity-50"
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-oterio-600 hover:bg-oterio-700 text-white text-xs font-bold cursor-pointer shadow-xs transition-all active:scale-95 disabled:opacity-50"
                     >
                       <Upload className="w-4 h-4" />
                       <span>Subir archivo PDF</span>
@@ -688,8 +725,13 @@ export const JobModal: React.FC<JobModalProps> = ({
           {/* Basic Info: OT & Cliente */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                OT (Orden de Trabajo) *
+              <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5 flex items-center justify-between gap-2">
+                <span>OT (Orden de Trabajo) *</span>
+                {hasAnalyzedPdf && !isAnalyzingPdf && !ot.trim() && (
+                  <span className="text-[10px] font-semibold normal-case text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                    Vacío tras analizar
+                  </span>
+                )}
               </label>
               <input
                 type="text"
@@ -697,17 +739,24 @@ export const JobModal: React.FC<JobModalProps> = ({
                 value={ot}
                 onChange={(e) => setOt(e.target.value)}
                 placeholder="Ej. OT-2026-101"
-                className={`w-full text-sm font-mono font-semibold px-3.5 py-2.5 rounded-xl border ${
+                className={`w-full text-sm font-mono font-semibold px-3.5 py-2.5 rounded-xl border transition-colors ${
                   !canEditCoreFields
-                    ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
-                    : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
+                    ? 'bg-graphite-100 text-graphite-500 border-graphite-200 cursor-not-allowed'
+                    : hasAnalyzedPdf && !isAnalyzingPdf && !ot.trim()
+                    ? 'bg-amber-50/40 text-graphite-900 border-amber-400 ring-1 ring-amber-200/80 focus:ring-2 focus:ring-amber-500'
+                    : 'bg-white text-graphite-900 border-graphite-300 focus:ring-2 focus:ring-oterio-500'
                 }`}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Cliente *
+              <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5 flex items-center justify-between gap-2">
+                <span>Cliente *</span>
+                {hasAnalyzedPdf && !isAnalyzingPdf && !client.trim() && (
+                  <span className="text-[10px] font-semibold normal-case text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                    Vacío tras analizar
+                  </span>
+                )}
               </label>
               <input
                 type="text"
@@ -715,10 +764,12 @@ export const JobModal: React.FC<JobModalProps> = ({
                 value={client}
                 onChange={(e) => setClient(e.target.value)}
                 placeholder="Nombre de la empresa o cliente"
-                className={`w-full text-sm px-3.5 py-2.5 rounded-xl border ${
+                className={`w-full text-sm px-3.5 py-2.5 rounded-xl border transition-colors ${
                   !canEditCoreFields
-                    ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
-                    : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
+                    ? 'bg-graphite-100 text-graphite-500 border-graphite-200 cursor-not-allowed'
+                    : hasAnalyzedPdf && !isAnalyzingPdf && !client.trim()
+                    ? 'bg-amber-50/40 text-graphite-900 border-amber-400 ring-1 ring-amber-200/80 focus:ring-2 focus:ring-amber-500'
+                    : 'bg-white text-graphite-900 border-graphite-300 focus:ring-2 focus:ring-oterio-500'
                 }`}
               />
             </div>
@@ -727,30 +778,38 @@ export const JobModal: React.FC<JobModalProps> = ({
           {/* Creation Date & Delivery Date */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+              <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5 flex items-center justify-between gap-2">
                 <span>Fecha de Creación / Entrada *</span>
-                <span className="text-[10px] text-indigo-600 font-semibold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                  Auto / PDF
-                </span>
+                {hasAnalyzedPdf && !isAnalyzingPdf && !createdAt.trim() ? (
+                  <span className="text-[10px] font-semibold normal-case text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                    Vacío tras analizar
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-oterio-700 font-semibold bg-oterio-50 px-2 py-0.5 rounded border border-oterio-200">
+                    Auto / PDF
+                  </span>
+                )}
               </label>
               <input
                 type="date"
                 disabled={!isAdmin && !isOperario && !isAdministrativo}
                 value={createdAt}
                 onChange={(e) => setCreatedAt(e.target.value)}
-                className={`w-full text-sm px-3.5 py-2.5 rounded-xl border ${
+                className={`w-full text-sm px-3.5 py-2.5 rounded-xl border transition-colors ${
                   !isAdmin && !isOperario && !isAdministrativo
-                    ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
-                    : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
+                    ? 'bg-graphite-100 text-graphite-500 border-graphite-200 cursor-not-allowed'
+                    : hasAnalyzedPdf && !isAnalyzingPdf && !createdAt.trim()
+                    ? 'bg-amber-50/40 text-graphite-900 border-amber-400 ring-1 ring-amber-200/80 focus:ring-2 focus:ring-amber-500'
+                    : 'bg-white text-graphite-900 border-graphite-300 focus:ring-2 focus:ring-oterio-500'
                 }`}
               />
-              <p className="text-[10px] text-slate-400 mt-1">
-                Generada automáticamente. Si adjuntas un PDF con otra fecha, se actualizará sola.
+              <p className="text-[10px] text-graphite-400 mt-1">
+                Generada automáticamente o extraída del PDF al analizarlo.
               </p>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
                 Fecha de entrega (opcional)
               </label>
               <input
@@ -760,11 +819,11 @@ export const JobModal: React.FC<JobModalProps> = ({
                 onChange={(e) => setDeliveryDate(e.target.value)}
                 className={`w-full text-sm px-3.5 py-2.5 rounded-xl border ${
                   !canEditCoreFields
-                    ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
-                    : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
+                    ? 'bg-graphite-100 text-graphite-500 border-graphite-200 cursor-not-allowed'
+                    : 'bg-white text-graphite-900 border-graphite-300 focus:ring-2 focus:ring-oterio-500'
                 }`}
               />
-              <p className="text-[10px] text-slate-400 mt-1">
+              <p className="text-[10px] text-graphite-400 mt-1">
                 Plazo límite o compromiso de entrega con el cliente.
               </p>
             </div>
@@ -772,7 +831,7 @@ export const JobModal: React.FC<JobModalProps> = ({
 
           {/* Urgent Toggle */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
               Prioridad / Urgencia
             </label>
             <button
@@ -782,16 +841,16 @@ export const JobModal: React.FC<JobModalProps> = ({
               className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm font-bold transition-all ${
                 isUrgent
                   ? 'bg-rose-50 border-rose-300 text-rose-700 shadow-xs'
-                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                  : 'bg-graphite-50 border-graphite-200 text-graphite-600 hover:bg-graphite-100'
               } ${!canEditCoreFields ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
             >
               <div className="flex items-center gap-2">
-                <Flame className={`w-4 h-4 ${isUrgent ? 'text-rose-600' : 'text-slate-400'}`} />
+                <Flame className={`w-4 h-4 ${isUrgent ? 'text-rose-600' : 'text-graphite-400'}`} />
                 <span>{isUrgent ? 'TRABAJO URGENTE' : 'Normal (No urgente)'}</span>
               </div>
               <span
                 className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                  isUrgent ? 'bg-rose-600 border-rose-600 text-white' : 'border-slate-300'
+                  isUrgent ? 'bg-rose-600 border-rose-600 text-white' : 'border-graphite-300'
                 }`}
               >
                 {isUrgent && <Check className="w-3 h-3" />}
@@ -802,9 +861,9 @@ export const JobModal: React.FC<JobModalProps> = ({
           {/* Department & Operator assignment (Always manual) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+              <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
                 <span>Departamento asignado *</span>
-                <span className="text-[10px] text-indigo-600 font-semibold lowercase">asignación manual</span>
+                <span className="text-[10px] text-oterio-600 font-semibold lowercase">asignación manual</span>
               </label>
               <select
                 disabled={isReadOnly}
@@ -812,8 +871,8 @@ export const JobModal: React.FC<JobModalProps> = ({
                 onChange={(e) => setDepartmentId(e.target.value)}
                 className={`w-full text-sm px-3.5 py-2.5 rounded-xl border ${
                   isReadOnly
-                    ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
-                    : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
+                    ? 'bg-graphite-100 text-graphite-500 cursor-not-allowed'
+                    : 'bg-white text-graphite-900 border-graphite-300 focus:ring-2 focus:ring-oterio-500'
                 }`}
               >
                 {departments.map((d) => (
@@ -825,9 +884,9 @@ export const JobModal: React.FC<JobModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+              <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
                 <span>Operario asignado</span>
-                <span className="text-[10px] text-indigo-600 font-semibold lowercase">asignación manual</span>
+                <span className="text-[10px] text-oterio-600 font-semibold lowercase">asignación manual</span>
               </label>
               <select
                 disabled={isReadOnly}
@@ -835,8 +894,8 @@ export const JobModal: React.FC<JobModalProps> = ({
                 onChange={(e) => setAssignedOperatorId(e.target.value)}
                 className={`w-full text-sm px-3.5 py-2.5 rounded-xl border ${
                   isReadOnly
-                    ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
-                    : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
+                    ? 'bg-graphite-100 text-graphite-500 cursor-not-allowed'
+                    : 'bg-white text-graphite-900 border-graphite-300 focus:ring-2 focus:ring-oterio-500'
                 }`}
               >
                 <option value="">-- Sin operario asignado --</option>
@@ -853,7 +912,7 @@ export const JobModal: React.FC<JobModalProps> = ({
 
           {/* Estado de trabajo */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
               Estado de la orden de trabajo
             </label>
             <select
@@ -862,8 +921,8 @@ export const JobModal: React.FC<JobModalProps> = ({
               onChange={(e) => setStatusId(e.target.value)}
               className={`w-full text-sm font-semibold px-3.5 py-2.5 rounded-xl border ${
                 isReadOnly
-                  ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
-                  : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
+                  ? 'bg-graphite-100 text-graphite-500 cursor-not-allowed'
+                  : 'bg-white text-graphite-900 border-graphite-300 focus:ring-2 focus:ring-oterio-500'
               }`}
             >
               {statuses.map((st) => (
@@ -877,14 +936,14 @@ export const JobModal: React.FC<JobModalProps> = ({
           {/* ======================================================== */}
           {/* CRONÓMETRO DE TIEMPO DE TRABAJO (OPCIONAL) */}
           {/* ======================================================== */}
-          <div className="p-4 rounded-2xl bg-slate-900 text-white shadow-md border border-slate-800 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-800">
+          <div className="p-4 rounded-2xl bg-graphite-950 text-white shadow-md border border-graphite-800 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-graphite-800">
               <div className="flex items-center gap-2">
                 <div
                   className={`p-2 rounded-xl ${
                     timer?.isRunning
                       ? 'bg-emerald-500/20 text-emerald-400 ring-2 ring-emerald-500/40'
-                      : 'bg-slate-800 text-slate-300'
+                      : 'bg-graphite-800 text-graphite-300'
                   }`}
                 >
                   <Timer className={`w-4 h-4 ${timer?.isRunning ? 'animate-pulse' : ''}`} />
@@ -894,11 +953,11 @@ export const JobModal: React.FC<JobModalProps> = ({
                     <h4 className="text-sm font-bold text-white tracking-tight">
                       Cronómetro de Trabajo
                     </h4>
-                    <span className="text-[10px] font-semibold text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                    <span className="text-[10px] font-semibold text-graphite-400 bg-graphite-800 px-2 py-0.5 rounded border border-graphite-700">
                       Opcional
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-graphite-400">
                     {timer?.isRunning
                       ? 'Cronómetro en marcha. Pulsa "Pausar" para pausar el conteo o "Detener" para finalizar.'
                       : liveElapsedSeconds > 0
@@ -921,7 +980,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                     <span>EN PAUSA</span>
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-graphite-800 text-graphite-400 border border-graphite-700">
                     <span>SIN INICIAR</span>
                   </span>
                 )}
@@ -932,7 +991,7 @@ export const JobModal: React.FC<JobModalProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
               <div>
                 <div className="flex items-baseline gap-2.5">
-                  <span className="font-mono text-3xl sm:text-4xl font-black tracking-wider text-white select-none">
+                  <span className="font-mono text-3xl sm:text-4xl font-black tracking-wider text-white select-none tabular-nums">
                     {formatSecondsToHMS(liveElapsedSeconds)}
                   </span>
                   {liveElapsedSeconds > 0 && (
@@ -949,7 +1008,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                   </p>
                 )}
                 {!timer?.isRunning && liveElapsedSeconds > 0 && (
-                  <p className="text-[11px] text-slate-400 mt-1">
+                  <p className="text-[11px] text-graphite-400 mt-1">
                     Tiempo total registrado: <strong>{formatSecondsToHuman(liveElapsedSeconds)}</strong>
                   </p>
                 )}
@@ -964,10 +1023,10 @@ export const JobModal: React.FC<JobModalProps> = ({
                       <button
                         type="button"
                         onClick={handlePauseTimer}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-graphite-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
                         title="Pausar el cronómetro (podrás reanudarlo cuando quieras)"
                       >
-                        <Pause className="w-4 h-4 fill-slate-950" />
+                        <Pause className="w-4 h-4 fill-graphite-950" />
                         <span>Pausar</span>
                       </button>
 
@@ -975,7 +1034,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                       <button
                         type="button"
                         onClick={handlePauseTimer}
-                        className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/70 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-800/80 active:scale-95 text-xs font-semibold cursor-pointer shadow-sm transition-all"
+                        className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-graphite-800 hover:bg-rose-950/70 text-graphite-300 hover:text-rose-200 border border-graphite-700 hover:border-rose-800/80 active:scale-95 text-xs font-semibold cursor-pointer shadow-sm transition-all"
                         title="Detener y registrar el tramo de trabajo"
                       >
                         <Square className="w-3.5 h-3.5 fill-current" />
@@ -988,10 +1047,10 @@ export const JobModal: React.FC<JobModalProps> = ({
                       <button
                         type="button"
                         onClick={handleStartTimer}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-graphite-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
                         title="Reanudar el cronómetro de trabajo"
                       >
-                        <Play className="w-4 h-4 fill-slate-950" />
+                        <Play className="w-4 h-4 fill-graphite-950" />
                         <span>Reanudar</span>
                       </button>
 
@@ -1006,7 +1065,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                         <button
                           type="button"
                           onClick={() => setShowResetConfirm(true)}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold cursor-pointer border border-slate-700 transition-colors"
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-graphite-800 hover:bg-graphite-700 text-graphite-300 hover:text-white text-xs font-semibold cursor-pointer border border-graphite-700 transition-colors"
                           title="Poner a 00:00:00"
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
@@ -1025,7 +1084,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                           <button
                             type="button"
                             onClick={() => setShowResetConfirm(false)}
-                            className="px-1.5 py-0.5 rounded text-slate-300 hover:text-white text-[11px] cursor-pointer"
+                            className="px-1.5 py-0.5 rounded text-graphite-300 hover:text-white text-[11px] cursor-pointer"
                           >
                             No
                           </button>
@@ -1037,9 +1096,9 @@ export const JobModal: React.FC<JobModalProps> = ({
                     <button
                       type="button"
                       onClick={handleStartTimer}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-graphite-950 font-bold text-xs cursor-pointer shadow-sm transition-all"
                     >
-                      <Play className="w-4 h-4 fill-slate-950" />
+                      <Play className="w-4 h-4 fill-graphite-950" />
                       <span>Iniciar Trabajo</span>
                     </button>
                   )}
@@ -1049,13 +1108,13 @@ export const JobModal: React.FC<JobModalProps> = ({
 
             {/* Sessions history accordion */}
             {timer?.sessions && timer.sessions.length > 0 && (
-              <div className="pt-2 border-t border-slate-800 text-xs">
+              <div className="pt-2 border-t border-graphite-800 text-xs">
                 <button
                   type="button"
                   onClick={() => setShowSessionsList(!showSessionsList)}
-                  className="text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
+                  className="text-[11px] text-graphite-400 hover:text-graphite-200 flex items-center gap-1 cursor-pointer transition-colors"
                 >
-                  <History className="w-3 h-3 text-indigo-400" />
+                  <History className="w-3 h-3 text-oterio-400" />
                   <span>
                     {showSessionsList ? 'Ocultar' : 'Ver'} registro de tramos ({timer.sessions.length})
                   </span>
@@ -1066,12 +1125,12 @@ export const JobModal: React.FC<JobModalProps> = ({
                     {timer.sessions.map((sess, idx) => (
                       <div
                         key={sess.id || idx}
-                        className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-[11px]"
+                        className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-graphite-900/80 border border-graphite-700/60 text-[11px]"
                       >
-                        <span className="text-slate-300 font-medium">
+                        <span className="text-graphite-300 font-medium">
                           {sess.operatorName}
                         </span>
-                        <div className="flex items-center gap-3 text-slate-400 font-mono">
+                        <div className="flex items-center gap-3 text-graphite-400 font-mono">
                           <span>
                             {new Date(sess.startedAt).toLocaleTimeString('es-ES', {
                               hour: '2-digit',
@@ -1098,16 +1157,16 @@ export const JobModal: React.FC<JobModalProps> = ({
           {/* Alertas (Manual) */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+              <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider">
                 Alertas del Trabajo
               </label>
-              <span className="text-[10px] text-indigo-600 font-semibold lowercase">gestión manual</span>
+              <span className="text-[10px] text-oterio-600 font-semibold lowercase">gestión manual</span>
             </div>
 
             {/* List of active alerts */}
             <div className="space-y-2 mb-2">
               {alerts.length === 0 ? (
-                <p className="text-xs text-slate-400 italic bg-slate-50 p-2.5 rounded-xl border border-dashed border-slate-200">
+                <p className="text-xs text-graphite-400 italic bg-graphite-50 p-2.5 rounded-xl border border-dashed border-graphite-200">
                   Sin alertas técnicas o incidencias registradas.
                 </p>
               ) : (
@@ -1157,7 +1216,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                     }
                   }}
                   placeholder="Ej. Esperando material, Falta plano acotado..."
-                  className="flex-1 text-xs px-3 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                  className="flex-1 text-xs px-3 py-2 rounded-xl border border-graphite-300 focus:ring-2 focus:ring-oterio-500"
                 />
                 <button
                   type="button"
@@ -1172,7 +1231,7 @@ export const JobModal: React.FC<JobModalProps> = ({
 
           {/* Recuadro para notas (Auto-filled by PDF or manual) */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
               Recuadro para notas y aclaraciones del trabajo
             </label>
             <textarea
@@ -1183,8 +1242,8 @@ export const JobModal: React.FC<JobModalProps> = ({
               placeholder="Escribe aquí cualquier indicación técnica, proceso, herramientas especiales o aclaraciones..."
               className={`w-full text-xs sm:text-sm p-3 rounded-xl border ${
                 isReadOnly
-                  ? 'bg-slate-100 text-slate-600 cursor-not-allowed'
-                  : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-indigo-500'
+                  ? 'bg-graphite-100 text-graphite-600 cursor-not-allowed'
+                  : 'bg-white text-graphite-900 border-graphite-300 focus:ring-2 focus:ring-oterio-500'
               }`}
             />
           </div>
@@ -1192,32 +1251,32 @@ export const JobModal: React.FC<JobModalProps> = ({
           {/* ========================================================== */}
           {/* SECCIÓN INFORMATIVA: HISTORIAL DE CREADOR Y OPERARIOS */}
           {/* ========================================================== */}
-          <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 shadow-2xs space-y-2">
-            <div className="flex items-center justify-between border-b border-slate-200/70 pb-1.5">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                <Clock className="w-3.5 h-3.5 text-slate-500" />
+          <div className="p-3 sm:p-3.5 rounded-xl bg-graphite-50 border border-graphite-200/90 shadow-2xs space-y-2">
+            <div className="flex items-center justify-between border-b border-graphite-200/70 pb-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-graphite-800">
+                <Clock className="w-3.5 h-3.5 text-graphite-500" />
                 <span>Historial de asignaciones</span>
               </div>
-              <span className="text-[10px] text-slate-400 font-medium">Informativo</span>
+              <span className="text-[10px] text-graphite-400 font-medium">Informativo</span>
             </div>
 
             {/* Administrador que lo creó */}
             <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
-              <span className="text-slate-500 font-medium">Creado por (Administrador):</span>
-              <span className="font-semibold text-slate-800">
+              <span className="text-graphite-500 font-medium">Creado por (Administrador):</span>
+              <span className="font-semibold text-graphite-800">
                 {adminCreatorName}{' '}
-                <span className="text-slate-400 font-normal">· {adminCreatorDate}</span>
+                <span className="text-graphite-400 font-normal">· {adminCreatorDate}</span>
               </span>
             </div>
 
             {/* Operarios por los que ha pasado */}
-            <div className="pt-1.5 border-t border-slate-200/60">
-              <span className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+            <div className="pt-1.5 border-t border-graphite-200/60">
+              <span className="block text-[11px] font-semibold text-graphite-500 uppercase tracking-wider mb-1.5">
                 Operarios por los que ha pasado:
               </span>
 
               {operatorAssignments.length === 0 ? (
-                <p className="text-xs text-slate-400 italic py-0.5">
+                <p className="text-xs text-graphite-400 italic py-0.5">
                   Sin operarios asignados hasta el momento.
                 </p>
               ) : (
@@ -1225,10 +1284,10 @@ export const JobModal: React.FC<JobModalProps> = ({
                   {operatorAssignments.map((op, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-white border border-slate-200 text-xs"
+                      className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-white border border-graphite-200 text-xs"
                     >
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-semibold text-slate-800 truncate">
+                        <span className="font-semibold text-graphite-800 truncate">
                           {op.name}
                         </span>
                         {op.isCurrent && (
@@ -1237,7 +1296,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                           </span>
                         )}
                       </div>
-                      <span className="text-[11px] text-slate-500 font-mono shrink-0 ml-2">
+                      <span className="text-[11px] text-graphite-500 font-mono shrink-0 ml-2">
                         {op.date}
                       </span>
                     </div>
@@ -1249,7 +1308,7 @@ export const JobModal: React.FC<JobModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50/70">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-graphite-100 bg-graphite-50/70">
           <div>
             {!isCreating && isAdmin && (
               !showDeleteConfirm ? (
@@ -1276,7 +1335,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowDeleteConfirm(false)}
-                    className="px-2 py-1 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-rose-100/60 rounded-lg transition-colors cursor-pointer"
+                    className="px-2 py-1 text-xs font-semibold text-graphite-600 hover:text-graphite-800 hover:bg-rose-100/60 rounded-lg transition-colors cursor-pointer"
                   >
                     Cancelar
                   </button>
@@ -1289,7 +1348,7 @@ export const JobModal: React.FC<JobModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200/60 rounded-xl transition-colors cursor-pointer"
+              className="px-4 py-2 text-xs font-semibold text-graphite-600 hover:bg-graphite-200/60 rounded-xl transition-colors cursor-pointer"
             >
               {isReadOnly ? 'Cerrar' : 'Cancelar'}
             </button>
@@ -1299,9 +1358,20 @@ export const JobModal: React.FC<JobModalProps> = ({
                 type="button"
                 onClick={handleSave}
                 disabled={isSaving || isAnalyzingPdf}
-                className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-xl shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-oterio-600 hover:bg-oterio-700 active:scale-95 rounded-xl shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
-                {isSaving ? 'Guardando...' : isCreating ? 'Crear Trabajo' : 'Guardar Cambios'}
+                {isAnalyzingPdf ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Analizando PDF...</span>
+                  </>
+                ) : isSaving ? (
+                  'Guardando...'
+                ) : isCreating ? (
+                  'Crear Trabajo'
+                ) : (
+                  'Guardar Cambios'
+                )}
               </button>
             )}
           </div>

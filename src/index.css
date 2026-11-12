@@ -1,1 +1,48 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Oterio Primary Copper / Burnt Terracotta (#AB3100) */
+  --color-oterio-50: #FFF5F0;
+  --color-oterio-100: #FCE6DA;
+  --color-oterio-200: #F8C9B2;
+  --color-oterio-300: #F0A37E;
+  --color-oterio-400: #DF7447;
+  --color-oterio-500: #C44614;
+  --color-oterio-600: #AB3100;
+  --color-oterio-700: #8D2700;
+  --color-oterio-800: #702004;
+  --color-oterio-900: #591B07;
+  --color-oterio-950: #330C02;
+
+  /* Oterio Secondary Charcoal / Graphite (#2C393B / #495658) */
+  --color-graphite-50: #F7F8F8;
+  --color-graphite-100: #EFF1F1;
+  --color-graphite-200: #DDE1E2;
+  --color-graphite-300: #C3CACC;
+  --color-graphite-400: #939E9F;
+  --color-graphite-500: #788485;
+  --color-graphite-600: #586567;
+  --color-graphite-700: #495658;
+  --color-graphite-800: #364345;
+  --color-graphite-900: #2C393B;
+  --color-graphite-950: #1A2224;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-graphite-50);
+    color: var(--color-graphite-900);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+  }
+}
