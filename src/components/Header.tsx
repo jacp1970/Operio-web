@@ -15,7 +15,6 @@ import {
   ArrowRight,
   ExternalLink,
   Trash2,
-  ShieldAlert,
   Shield,
 } from 'lucide-react';
 import { WorkOrder, AppNotification, NotificationType } from '../types';
@@ -23,13 +22,11 @@ import { WorkOrder, AppNotification, NotificationType } from '../types';
 interface HeaderProps {
   onOpenMobileSidebar: () => void;
   onOpenJobDetail?: (job: WorkOrder) => void;
-  onOpenResetCompanyModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenMobileSidebar,
   onOpenJobDetail,
-  onOpenResetCompanyModal,
 }) => {
   const {
     currentUser,
@@ -343,20 +340,6 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
                   </div>
 
-                  {currentUser.role === 'administrador' && (
-                    <div className="pt-1 mt-0.5 border-t border-graphite-100 p-1">
-                      <button
-                        onClick={() => {
-                          setUserMenuOpen(false);
-                          setCurrentNav('resetear_empresa');
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
-                      >
-                        <ShieldAlert className="w-4 h-4 text-rose-600" />
-                        <span>Resetear y borrar empresa</span>
-                      </button>
-                    </div>
-                  )}
                 </div>
               </>
             )}

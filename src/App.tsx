@@ -13,6 +13,7 @@ import { JobModal } from './components/JobModal';
 import { PdfViewerModal } from './components/PdfViewerModal';
 import { ResetCompanyModal } from './components/ResetCompanyModal';
 import { ResetCompanyView } from './components/ResetCompanyView';
+import { CompletedJobsView } from './components/CompletedJobsView';
 import { WorkOrder } from './types';
 
 function MainApp() {
@@ -82,7 +83,6 @@ function MainApp() {
         <Header
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
           onOpenJobDetail={handleOpenJobDetail}
-          onOpenResetCompanyModal={() => setResetCompanyModalOpen(true)}
         />
 
         {/* Dynamic Workspace Area */}
@@ -90,7 +90,6 @@ function MainApp() {
           {currentNav === 'panel_de_control' && (
             <DashboardView
               onOpenJobDetail={handleOpenJobDetail}
-              onOpenResetCompanyModal={() => setResetCompanyModalOpen(true)}
             />
           )}
 
@@ -98,6 +97,13 @@ function MainApp() {
             <JobsView
               onOpenJobDetail={handleOpenJobDetail}
               onOpenNewJobModal={handleOpenNewJobModal}
+              onOpenPdfViewer={handleOpenPdfViewer}
+            />
+          )}
+
+          {currentNav === 'ot_finalizados' && (
+            <CompletedJobsView
+              onOpenJobDetail={handleOpenJobDetail}
               onOpenPdfViewer={handleOpenPdfViewer}
             />
           )}
@@ -116,7 +122,7 @@ function MainApp() {
           )}
 
           {currentNav === 'resetear_empresa' && (
-            <ResetCompanyView onCancel={() => setCurrentNav('panel_de_control')} />
+            <ResetCompanyView onCancel={() => setCurrentNav('usuarios')} />
           )}
         </main>
       </div>

@@ -119,6 +119,9 @@ export interface WorkOrder {
   createdByName?: string; // Nombre del administrador creador
   participantsHistory?: WorkOrderParticipant[]; // Historial de personas por las que ha pasado el trabajo
   timer?: WorkOrderTimer; // Cronómetro de trabajo (opcional)
+  isInvoiced?: boolean; // Si el trabajo finalizado ha sido marcado como facturado
+  invoicedAt?: string; // Fecha ISO en que se marcó como facturado
+  invoicedByName?: string; // Nombre del administrador que marcó el trabajo como facturado
 }
 
 export type NotificationType =
@@ -144,6 +147,7 @@ export interface AppNotification {
 export type NavigationItemKey =
   | 'panel_de_control'
   | 'trabajos'
+  | 'ot_finalizados'
   | 'departamentos'
   | 'estados'
   | 'usuarios'

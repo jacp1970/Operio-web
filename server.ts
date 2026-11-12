@@ -36,8 +36,8 @@ function normalizeIsoDate(value: unknown): string | null {
   const trimmed = value.trim();
   if (!trimmed || trimmed.toLowerCase() === 'null') return null;
 
-  // Already YYYY-MM-DD
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  // Already YYYY-MM-DD or YYYY/MM/DD
+  const isoMatch = trimmed.match(/^(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})$/);
   if (isoMatch) {
     const year = Number(isoMatch[1]);
     const month = Number(isoMatch[2]);
@@ -106,14 +106,15 @@ app.post('/api/extract-work-order-pdf', async (req, res) => {
         fileName ? ` (nombre de archivo: "${String(fileName)}")` : ''
       } correspondiente a una orden de trabajo, parte, pedido o plano técnico de taller.
 
-Extrae EXCLUSIVAMENTE estos 5 campos en JSON estricto siguiendo el esquema:
+Extrae EXCLUSIVAMENTE estos 6 campos en JSON estricto siguiendo el esquema:
 1. ot: Número o código de orden de trabajo (busca etiquetas como Nº OT, O.T., Orden de trabajo, Parte, Referencia, Ref., Expediente o similar). Si no figura en el documento, devuelve null.
 2. client: Nombre, razón social o empresa del cliente destinatario del trabajo (no confundir con la empresa emisora/taller si aparecen ambas). Si no figura, devuelve null.
 3. createdAt: Fecha de entrada, recepción, apertura, emisión o alta del trabajo en formato YYYY-MM-DD. Si no figura explícitamente en el documento, devuelve null.
-4. deliveryDate: Fecha de entrega, vencimiento o compromiso de entrega en formato YYYY-MM-DD ÚNICAMENTE si aparece de forma explícita en el documento. Si no existe fecha de entrega explícita, devuelve null (bajo ningún concepto inventes ni deduzcas fechas).
+4. deliveryDate: Fecha de entrega, plazo de entrega, fecha límite, vencimiento, entrega prevista, fecha requerida o compromiso de entrega en formato YYYY-MM-DD ÚNICAMENTE si aparece explícitamente en el documento (busca etiquetas como Fecha de entrega, F. Entrega, Plazo, Vencimiento, Compromiso, Entrega prevista, Para entregar el, Deadline o Delivery Date). Si no existe fecha de entrega explícita, devuelve null (bajo ningún concepto inventes ni deduzcas fechas).
 5. notes: Descripción del trabajo limpia y estructurada con las tareas, piezas, materiales, operaciones u observaciones técnicas a realizar. Si hay varias líneas o conceptos de trabajo, unifícalos en un solo texto con saltos de línea claros. Si no hay descripción técnica, devuelve null.
+6. isUrgent: Booleano (true/false). Devuelve true ÚNICAMENTE si el documento refleja de forma explícita que el trabajo es urgente (por ejemplo mediante textos, sellos, marcas o notas como URGENTE, MUY URGENTE, PRIORIDAD ALTA, PRIORITARIO, EXPRÉS, EXPRESS, INMEDIATO, ASAP o similar). En caso contrario, devuelve false.
 
-Si algún campo no aparece en el documento, devuelve null.`,
+Si algún campo de texto o fecha no aparece en el documento, devuelve null.`,
     };
 
     const response = await ai.models.generateContent({
@@ -121,7 +122,7 @@ Si algún campo no aparece en el documento, devuelve null.`,
       contents: { parts: [pdfPart, textPart] },
       config: {
         systemInstruction:
-          'Eres un asistente especializado en digitalización de órdenes de trabajo y partes técnicos industriales en español (incluidos documentos escaneados o fotografías guardadas en PDF). Extraes únicamente los 5 campos solicitados sin inventar datos ni deducir fechas ausentes. Cuando un dato no figure explícitamente, devuelves null.',
+          'Eres un asistente especializado en digitalización de órdenes de trabajo y partes técnicos industriales en español (incluidos documentos escaneados o fotografías guardadas en PDF). Extraes únicamente los 6 campos solicitados sin inventar datos ni deducir fechas ausentes. Cuando un dato de texto o fecha no figure explícitamente, devuelves null; y en isUrgent devuelves true solo si el documento indica urgencia o prioridad alta.',
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -148,7 +149,7 @@ Si algún campo no aparece en el documento, devuelve null.`,
               type: Type.STRING,
               nullable: true,
               description:
-                'Fecha de entrega, vencimiento o compromiso en formato YYYY-MM-DD solo si aparece explícitamente. Null si no existe, sin inventar ni deducir.',
+                'Fecha de entrega, plazo, vencimiento o compromiso en formato YYYY-MM-DD solo si aparece explícitamente. Null si no existe, sin inventar ni deducir.',
             },
             notes: {
               type: Type.STRING,
@@ -156,9 +157,14 @@ Si algún campo no aparece en el documento, devuelve null.`,
               description:
                 'Descripción del trabajo limpia y estructurada con las tareas, observaciones técnicas o conceptos; varias líneas unificadas con saltos de línea claros. Null si no existe.',
             },
+            isUrgent: {
+              type: Type.BOOLEAN,
+              description:
+                'true únicamente si el documento indica explícitamente que el trabajo es urgente, prioritario o de prioridad alta; false en caso contrario.',
+            },
           },
-          required: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes'],
-          propertyOrdering: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes'],
+          required: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
+          propertyOrdering: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
         },
       },
     });
@@ -185,6 +191,7 @@ Si algún campo no aparece en el documento, devuelve null.`,
       createdAt: normalizeIsoDate(parsed.createdAt),
       deliveryDate: normalizeIsoDate(parsed.deliveryDate),
       notes: normalizeTextField(parsed.notes),
+      isUrgent: parsed.isUrgent === true,
     });
   } catch (err: any) {
     console.error('Gemini PDF extraction error:', err);

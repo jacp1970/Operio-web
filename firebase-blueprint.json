@@ -70,6 +70,9 @@
         "alerts": { "type": "array" },
         "notes": { "type": "string" },
         "pdfAttachment": { "type": "object" },
+        "isInvoiced": { "type": "boolean" },
+        "invoicedAt": { "type": "string" },
+        "invoicedByName": { "type": "string" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },

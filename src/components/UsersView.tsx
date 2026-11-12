@@ -17,6 +17,7 @@ import {
   Info,
   Sparkles,
   FileText,
+  ShieldAlert,
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -30,6 +31,7 @@ export const UsersView: React.FC = () => {
     updateUser,
     deleteUser,
     updateCompanyDetails,
+    setCurrentNav,
   } = useApp();
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -675,6 +677,34 @@ export const UsersView: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* Resetear / Borrar Empresa (solo visible al editar la ficha del administrador) */}
+              {editingUserId && role === 'administrador' && (
+                <div className="pt-3 border-t border-graphite-200">
+                  <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold text-rose-900 flex items-center gap-1.5">
+                        <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>Resetear o borrar empresa</span>
+                      </p>
+                      <p className="text-[11px] text-rose-700/90 mt-0.5">
+                        Acceso a la pestaña de puesta a cero o eliminación definitiva de la empresa.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalOpen(false);
+                        setCurrentNav('resetear_empresa');
+                      }}
+                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-2xs transition-colors cursor-pointer shrink-0"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5" />
+                      <span>Resetear Empresa</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-4 border-t border-graphite-100 mt-4">

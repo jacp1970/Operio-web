@@ -17,18 +17,18 @@ import {
   Trash2,
   ShieldAlert,
   Timer,
+  Loader2,
 } from 'lucide-react';
 import { getDepartmentColor, getOperatorColor } from '../utils/colorUtils';
 import { formatSecondsToHuman } from '../utils/timeUtils';
+import { ConfirmModal } from './ConfirmModal';
 
 interface DashboardViewProps {
   onOpenJobDetail: (job: WorkOrder) => void;
-  onOpenResetCompanyModal?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenJobDetail,
-  onOpenResetCompanyModal,
 }) => {
   const {
     currentUser,
@@ -41,6 +41,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     getDepartmentName,
     getStatus,
     getUser,
+    deleteWorkOrderPermanently,
   } = useApp();
 
   // Active subtab for Administrator
@@ -57,7 +58,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('todos');
   const [selectedOpFilter, setSelectedOpFilter] = useState<string>('todos');
 
+  // Delete confirmation state for Administrador
+  const [deleteTargetJob, setDeleteTargetJob] = useState<WorkOrder | null>(null);
+  const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+  const [feedbackBanner, setFeedbackBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   if (!currentUser) return null;
+
+  const isAdmin = currentUser.role === 'administrador';
+
+  const handleConfirmPermanentDelete = async () => {
+    if (!deleteTargetJob || !isAdmin) return;
+    const target = deleteTargetJob;
+    setDeleteTargetJob(null);
+    setIsDeletingId(target.id);
+    setFeedbackBanner(null);
+
+    const res = await deleteWorkOrderPermanently(target.id);
+    setIsDeletingId(null);
+
+    if (res.success) {
+      setFeedbackBanner({
+        type: 'success',
+        text: `La orden ${target.ot} se ha eliminado definitivamente de la base de datos.`,
+      });
+      setTimeout(() => setFeedbackBanner(null), 3500);
+    } else {
+      setFeedbackBanner({
+        type: 'error',
+        text: res.error || 'No se pudo eliminar el trabajo de la base de datos.',
+      });
+    }
+  };
 
   // Helpers
   const isJobCompleted = (wo: WorkOrder) => {
@@ -97,16 +129,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               )}
             </div>
 
-            {/* Status badge */}
-            <span
-              className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                status?.isCompleted
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  : 'bg-oterio-50 text-oterio-700 border border-oterio-200'
-              }`}
-            >
-              {status?.name || 'Estado'}
-            </span>
+            {/* Status badge + Admin Delete icon */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span
+                className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                  status?.isCompleted
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-oterio-50 text-oterio-700 border border-oterio-200'
+                }`}
+              >
+                {status?.name || 'Estado'}
+              </span>
+
+              {isAdmin && (
+                <button
+                  type="button"
+                  disabled={isDeletingId === job.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteTargetJob(job);
+                  }}
+                  title="Eliminar de la base de datos"
+                  aria-label={`Eliminar ${job.ot} de la base de datos`}
+                  className="p-1.5 rounded-lg text-graphite-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-40"
+                >
+                  {isDeletingId === job.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                </button>
+              )}
+            </div>
           </div>
 
           <h3 className="font-bold text-graphite-900 text-base mb-1 group-hover:text-oterio-600 transition-colors">
@@ -217,6 +271,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </p>
           </div>
         </div>
+
+        {/* Delete feedback banner */}
+        {feedbackBanner && (
+          <div
+            className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 animate-in fade-in ${
+              feedbackBanner.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border-rose-200 text-rose-800'
+            }`}
+          >
+            <span>{feedbackBanner.text}</span>
+            <button
+              type="button"
+              onClick={() => setFeedbackBanner(null)}
+              className="text-xs font-bold opacity-70 hover:opacity-100 cursor-pointer"
+            >
+              &times;
+            </button>
+          </div>
+        )}
 
         {/* 5 Primary Classification Metric Cards matching PDF */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
@@ -452,6 +526,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           )}
         </div>
+
+        {/* Permanent Database Deletion Confirmation Modal */}
+        <ConfirmModal
+          isOpen={Boolean(deleteTargetJob)}
+          title="Eliminar trabajo de la base de datos"
+          message={
+            deleteTargetJob
+              ? `¿Confirmas que deseas eliminar definitivamente la orden ${deleteTargetJob.ot} (${deleteTargetJob.client}) de la base de datos? Esta acción no se puede deshacer.`
+              : ''
+          }
+          confirmText="Sí, eliminar"
+          cancelText="Cancelar"
+          isDanger
+          onConfirm={handleConfirmPermanentDelete}
+          onCancel={() => setDeleteTargetJob(null)}
+        />
       </div>
     );
   }

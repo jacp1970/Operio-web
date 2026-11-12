@@ -6,6 +6,7 @@ import {
   Department,
   JobStatus,
   WorkOrder,
+  WorkOrderTimeSession,
   WorkAlert,
   WorkOrderParticipant,
   PdfAttachment,
@@ -20,7 +21,7 @@ import {
   INITIAL_WORK_ORDERS,
   INITIAL_NOTIFICATIONS,
 } from '../data/initialData';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import {
   collection,
   doc,
@@ -74,6 +75,8 @@ interface AppContextType {
   createWorkOrder: (data: Omit<WorkOrder, 'id' | 'companyId' | 'updatedAt' | 'alerts'> & { initialAlert?: string; createdAt?: string }) => { success: boolean; error?: string };
   updateWorkOrder: (id: string, updates: Partial<WorkOrder>) => { success: boolean; error?: string };
   deleteWorkOrder: (id: string) => { success: boolean; error?: string };
+  deleteWorkOrderPermanently: (id: string) => Promise<{ success: boolean; error?: string }>;
+  toggleWorkOrderInvoiced: (workOrderId: string, invoiced: boolean) => { success: boolean; error?: string };
   reorderWorkOrder: (workOrderId: string, direction: 'up' | 'down') => { success: boolean; error?: string };
   resetWorkOrdersOrderToDate: () => void;
   addAlertToJob: (workOrderId: string, alertText: string) => void;
@@ -1341,6 +1344,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       finalUpdates.participantsHistory = [...baseHistory, ...newHistoryEntries];
     }
 
+    // Automatically stop running stopwatch if the job is marked as completed
+    const effectiveTimer = finalUpdates.timer !== undefined ? finalUpdates.timer : existing.timer;
+    const targetStatusObj = getStatus(effectiveStatusId);
+    if (targetStatusObj?.isCompleted && effectiveTimer?.isRunning) {
+      const nowMs = Date.now();
+      const startMs = effectiveTimer.activeStartedAt
+        ? new Date(effectiveTimer.activeStartedAt).getTime()
+        : nowMs;
+      const sessionSeconds = Math.max(0, Math.floor((nowMs - startMs) / 1000));
+      const closedSession: WorkOrderTimeSession = {
+        id: `sess-${nowMs}`,
+        operatorId: effectiveTimer.activeOperatorId || currentUser.id,
+        operatorName: effectiveTimer.activeOperatorName || currentUser.name,
+        startedAt: effectiveTimer.activeStartedAt || nowIso,
+        endedAt: nowIso,
+        seconds: sessionSeconds,
+      };
+      finalUpdates.timer = {
+        totalSeconds: (effectiveTimer.totalSeconds || 0) + sessionSeconds,
+        isRunning: false,
+        sessions: [closedSession, ...(effectiveTimer.sessions || [])],
+      };
+    }
+
     // Status change notifications
     if (updates.statusId && updates.statusId !== existing.statusId) {
       const oldStatus = getStatus(existing.statusId)?.name || 'Anterior';
@@ -1446,6 +1473,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     setAllWorkOrders((prev) => prev.filter((w) => w.id !== id));
     fsDelete('workOrders', id);
+    return { success: true };
+  };
+
+  const deleteWorkOrderPermanently = async (
+    id: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser || currentUser.role !== 'administrador') {
+      return {
+        success: false,
+        error: 'Solo el administrador puede eliminar órdenes de trabajo de la base de datos.',
+      };
+    }
+
+    try {
+      await deleteDoc(doc(db, 'workOrders', id));
+
+      // Clean up related notifications in Firestore as well
+      const relatedNotifs = allNotifications.filter((n) => n.workOrderId === id);
+      if (relatedNotifs.length > 0) {
+        await Promise.allSettled(
+          relatedNotifs.map((n) => deleteDoc(doc(db, 'notifications', n.id)))
+        );
+        setAllNotifications((prev) => prev.filter((n) => n.workOrderId !== id));
+      }
+
+      delete largePdfCacheRef.current[id];
+      setAllWorkOrders((prev) => prev.filter((w) => w.id !== id));
+      return { success: true };
+    } catch (err: any) {
+      const errInfo = {
+        error: err instanceof Error ? err.message : String(err),
+        operationType: 'delete',
+        path: `workOrders/${id}`,
+        authInfo: {
+          userId: auth.currentUser?.uid ?? null,
+          email: auth.currentUser?.email ?? null,
+          emailVerified: auth.currentUser?.emailVerified ?? null,
+        },
+      };
+      console.error('Firestore Delete Error:', JSON.stringify(errInfo));
+      return {
+        success: false,
+        error:
+          err?.message ||
+          'No se pudo eliminar la orden de trabajo de la base de datos. Inténtalo de nuevo.',
+      };
+    }
+  };
+
+  const toggleWorkOrderInvoiced = (
+    workOrderId: string,
+    invoiced: boolean
+  ): { success: boolean; error?: string } => {
+    if (!currentUser || currentUser.role !== 'administrador') {
+      return {
+        success: false,
+        error: 'Solo el administrador puede marcar o desmarcar órdenes como facturadas.',
+      };
+    }
+
+    const existing = allWorkOrders.find((w) => w.id === workOrderId);
+    if (!existing) {
+      return { success: false, error: 'Orden de trabajo no encontrada.' };
+    }
+
+    const nowIso = new Date().toISOString();
+
+    setAllWorkOrders((prev) =>
+      prev.map((w) =>
+        w.id === workOrderId
+          ? {
+              ...w,
+              isInvoiced: invoiced,
+              invoicedAt: invoiced ? nowIso : undefined,
+              invoicedByName: invoiced ? currentUser.name : undefined,
+              updatedAt: nowIso,
+            }
+          : w
+      )
+    );
+
+    fsUpdate('workOrders', workOrderId, {
+      isInvoiced: invoiced,
+      invoicedAt: invoiced ? nowIso : null,
+      invoicedByName: invoiced ? currentUser.name : null,
+      updatedAt: nowIso,
+    });
+
     return { success: true };
   };
 
@@ -1950,6 +2065,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createWorkOrder,
         updateWorkOrder,
         deleteWorkOrder,
+        deleteWorkOrderPermanently,
+        toggleWorkOrderInvoiced,
         reorderWorkOrder,
         resetWorkOrdersOrderToDate,
         addAlertToJob,

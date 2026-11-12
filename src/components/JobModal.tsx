@@ -52,7 +52,7 @@ export const JobModal: React.FC<JobModalProps> = ({
     statuses,
     createWorkOrder,
     updateWorkOrder,
-    deleteWorkOrder,
+    deleteWorkOrderPermanently,
     deleteJobPdf,
     getJobParticipants,
     getDepartmentName,
@@ -290,13 +290,15 @@ export const JobModal: React.FC<JobModalProps> = ({
       const extractedDeliveryDate =
         typeof payload.deliveryDate === 'string' && payload.deliveryDate.trim() ? payload.deliveryDate.trim() : '';
       const extractedNotes = typeof payload.notes === 'string' && payload.notes.trim() ? payload.notes.trim() : '';
+      const extractedIsUrgent = payload.isUrgent === true;
 
-      // Apply strictly to the 5 form fields (if null, leave field empty; do NOT touch other fields)
+      // Apply extracted fields (leave empty when null; mark urgent if detected in PDF)
       setOt(extractedOt);
       setClient(extractedClient);
       setCreatedAt(extractedCreatedAt);
       setDeliveryDate(extractedDeliveryDate);
       setNotes(extractedNotes);
+      setIsUrgent(extractedIsUrgent);
       setHasAnalyzedPdf(true);
 
       const detectedCount = [
@@ -305,6 +307,7 @@ export const JobModal: React.FC<JobModalProps> = ({
         extractedCreatedAt,
         extractedDeliveryDate,
         extractedNotes,
+        extractedIsUrgent ? 'urgente' : '',
       ].filter(Boolean).length;
 
       const missingMainFields: string[] = [];
@@ -317,8 +320,9 @@ export const JobModal: React.FC<JobModalProps> = ({
           missingMainFields.length > 0
             ? ` Faltan por detectar: ${missingMainFields.join(', ')}.`
             : '';
+        const urgentNotice = extractedIsUrgent ? ' Marcado como URGENTE según el documento.' : '';
         setPdfSuccessNotice(
-          `Datos extraídos con Gemini Flash para revisión.${missingWarning} Comprueba la información antes de pulsar guardar.`
+          `Datos extraídos con Gemini Flash para revisión.${urgentNotice}${missingWarning} Comprueba la información antes de pulsar guardar.`
         );
       } else {
         setPdfSuccessNotice(
@@ -486,9 +490,16 @@ export const JobModal: React.FC<JobModalProps> = ({
     }
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!job || !isAdmin) return;
-    deleteWorkOrder(job.id);
+    setIsSaving(true);
+    const res = await deleteWorkOrderPermanently(job.id);
+    setIsSaving(false);
+    if (!res.success) {
+      setShowDeleteConfirm(false);
+      showValidationError(res.error || 'No se pudo eliminar el trabajo de la base de datos.');
+      return;
+    }
     setShowDeleteConfirm(false);
     onClose();
   };
@@ -607,7 +618,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                   Analizando archivo PDF con Gemini Flash...
                 </p>
                 <p className="text-[11px] text-oterio-700">
-                  Extrayendo Nº OT, cliente, fechas y descripción del trabajo para tu revisión antes de guardar.
+                  Extrayendo Nº OT, cliente, fechas, urgencia y descripción del trabajo para tu revisión antes de guardar.
                 </p>
               </div>
             </div>

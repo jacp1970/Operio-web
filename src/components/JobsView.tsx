@@ -26,6 +26,9 @@ import {
   Maximize2,
   Minimize2,
   Timer,
+  Trash2,
+  Loader2,
+  X,
 } from 'lucide-react';
 import {
   getOperatorColor,
@@ -33,6 +36,7 @@ import {
   getUnassignedPalette,
 } from '../utils/colorUtils';
 import { formatSecondsToHuman } from '../utils/timeUtils';
+import { ConfirmModal } from './ConfirmModal';
 
 interface JobsViewProps {
   onOpenJobDetail: (job: WorkOrder) => void;
@@ -56,6 +60,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
     getUser,
     reorderWorkOrder,
     resetWorkOrdersOrderToDate,
+    deleteWorkOrderPermanently,
   } = useApp();
 
   const isAdmin = currentUser?.role === 'administrador';
@@ -65,7 +70,8 @@ export const JobsView: React.FC<JobsViewProps> = ({
   const canReorder = isAdmin || isOperario || isAdministrativo;
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('todos');
+  const [searchScope, setSearchScope] = useState<'todos' | 'activos' | 'completados'>('todos');
+  const [statusFilter, setStatusFilter] = useState<string>('activos');
   const [departmentFilter, setDepartmentFilter] = useState<string>('todos');
   const [operatorFilter, setOperatorFilter] = useState<string>('todos');
   const [onlyUrgent, setOnlyUrgent] = useState<boolean>(false);
@@ -87,6 +93,9 @@ export const JobsView: React.FC<JobsViewProps> = ({
   const [sortCriteria, setSortCriteria] = useState<'date' | 'operator_order'>('date');
   const [dateDirection, setDateDirection] = useState<'desc' | 'asc'>('desc');
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [deleteTargetJob, setDeleteTargetJob] = useState<WorkOrder | null>(null);
+  const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
 
   if (!currentUser) return null;
 
@@ -106,47 +115,102 @@ export const JobsView: React.FC<JobsViewProps> = ({
     }
   };
 
+  const normalizeSearchText = (val?: string) =>
+    (val || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+  const normalizedQuery = normalizeSearchText(searchTerm.trim());
+  const hasSearchQuery = normalizedQuery.length > 0;
+
+  // Base search matches across all non-deleted work orders (both active and completed)
+  const searchBaseMatches = hasSearchQuery
+    ? workOrders.filter((wo) => {
+        const matchOt = normalizeSearchText(wo.ot).includes(normalizedQuery);
+        const matchClient = normalizeSearchText(wo.client).includes(normalizedQuery);
+        const matchNotes = normalizeSearchText(wo.notes).includes(normalizedQuery);
+        const matchAlerts = wo.alerts.some((a) =>
+          normalizeSearchText(a.text).includes(normalizedQuery)
+        );
+        if (!matchOt && !matchClient && !matchNotes && !matchAlerts) return false;
+
+        if (departmentFilter !== 'todos' && wo.departmentId !== departmentFilter) {
+          return false;
+        }
+        if (operatorFilter !== 'todos' && wo.assignedOperatorId !== operatorFilter) {
+          return false;
+        }
+        if (onlyUrgent && !wo.isUrgent) {
+          return false;
+        }
+        if (onlyAlerts && wo.alerts.length === 0) {
+          return false;
+        }
+        return true;
+      })
+    : [];
+
+  const searchActiveCount = hasSearchQuery
+    ? searchBaseMatches.filter((wo) => !getStatus(wo.statusId)?.isCompleted).length
+    : 0;
+  const searchCompletedCount = hasSearchQuery
+    ? searchBaseMatches.filter((wo) => Boolean(getStatus(wo.statusId)?.isCompleted)).length
+    : 0;
+
   // Filter logic
-  const filteredJobs = workOrders.filter((wo) => {
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      const matchOt = wo.ot.toLowerCase().includes(q);
-      const matchClient = wo.client.toLowerCase().includes(q);
-      const matchNotes = wo.notes.toLowerCase().includes(q);
-      const matchAlerts = wo.alerts.some((a) => a.text.toLowerCase().includes(q));
-      if (!matchOt && !matchClient && !matchNotes && !matchAlerts) return false;
-    }
+  const filteredJobs = hasSearchQuery
+    ? searchBaseMatches.filter((wo) => {
+        const woStatus = getStatus(wo.statusId);
+        if (searchScope === 'activos' && woStatus?.isCompleted) return false;
+        if (searchScope === 'completados' && !woStatus?.isCompleted) return false;
 
-    if (statusFilter !== 'todos') {
-      if (statusFilter === 'completados') {
-        const s = getStatus(wo.statusId);
-        if (!s?.isCompleted) return false;
-      } else if (statusFilter === 'activos') {
-        const s = getStatus(wo.statusId);
-        if (s?.isCompleted) return false;
-      } else if (wo.statusId !== statusFilter) {
-        return false;
-      }
-    }
+        if (
+          statusFilter !== 'activos' &&
+          statusFilter !== 'todos' &&
+          statusFilter !== 'completados' &&
+          wo.statusId !== statusFilter
+        ) {
+          return false;
+        }
+        return true;
+      })
+    : workOrders.filter((wo) => {
+        const woStatus = getStatus(wo.statusId);
 
-    if (departmentFilter !== 'todos' && wo.departmentId !== departmentFilter) {
-      return false;
-    }
+        // Sin búsqueda activa, una vez marcado como finalizado desaparece de la lista del operario
+        if (isOperario && woStatus?.isCompleted) {
+          return false;
+        }
 
-    if (operatorFilter !== 'todos' && wo.assignedOperatorId !== operatorFilter) {
-      return false;
-    }
+        if (statusFilter !== 'todos') {
+          if (statusFilter === 'completados') {
+            if (!woStatus?.isCompleted) return false;
+          } else if (statusFilter === 'activos') {
+            if (woStatus?.isCompleted) return false;
+          } else if (wo.statusId !== statusFilter) {
+            return false;
+          }
+        }
 
-    if (onlyUrgent && !wo.isUrgent) {
-      return false;
-    }
+        if (departmentFilter !== 'todos' && wo.departmentId !== departmentFilter) {
+          return false;
+        }
 
-    if (onlyAlerts && wo.alerts.length === 0) {
-      return false;
-    }
+        if (operatorFilter !== 'todos' && wo.assignedOperatorId !== operatorFilter) {
+          return false;
+        }
 
-    return true;
-  });
+        if (onlyUrgent && !wo.isUrgent) {
+          return false;
+        }
+
+        if (onlyAlerts && wo.alerts.length === 0) {
+          return false;
+        }
+
+        return true;
+      });
 
   // Sorting logic
   const sortedJobs = [...filteredJobs].sort((a, b) => {
@@ -184,6 +248,24 @@ export const JobsView: React.FC<JobsViewProps> = ({
     setDateDirection('desc');
     setFeedbackNotice('Trabajos restablecidos al orden por fecha de creación.');
     setTimeout(() => setFeedbackNotice(null), 3000);
+  };
+
+  const handleConfirmPermanentDelete = async () => {
+    if (!deleteTargetJob || !isAdmin) return;
+    const target = deleteTargetJob;
+    setDeleteTargetJob(null);
+    setIsDeletingId(target.id);
+    setErrorNotice(null);
+
+    const res = await deleteWorkOrderPermanently(target.id);
+    setIsDeletingId(null);
+
+    if (res.success) {
+      setFeedbackNotice(`La orden ${target.ot} se ha eliminado definitivamente de la base de datos.`);
+      setTimeout(() => setFeedbackNotice(null), 3500);
+    } else {
+      setErrorNotice(res.error || 'No se pudo eliminar el trabajo de la base de datos.');
+    }
   };
 
   // Build columns for "Por Empleado"
@@ -381,18 +463,114 @@ export const JobsView: React.FC<JobsViewProps> = ({
         </div>
       </div>
 
-      {/* Reorder feedback notice */}
+      {/* Reorder / Delete feedback notices */}
       {feedbackNotice && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-between animate-in fade-in">
           <span>{feedbackNotice}</span>
           <button
             onClick={() => setFeedbackNotice(null)}
-            className="text-emerald-600 hover:text-emerald-800 ml-2"
+            className="text-emerald-600 hover:text-emerald-800 ml-2 cursor-pointer"
           >
             &times;
           </button>
         </div>
       )}
+
+      {errorNotice && (
+        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold flex items-center justify-between animate-in fade-in">
+          <span>{errorNotice}</span>
+          <button
+            onClick={() => setErrorNotice(null)}
+            className="text-rose-600 hover:text-rose-800 ml-2 cursor-pointer"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
+      {/* =========================================================================
+         BUSCADOR DE ÓRDENES DE TRABAJO Y CLIENTES (ACTIVOS Y TERMINADOS)
+         ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-graphite-200 p-3.5 shadow-xs space-y-2.5">
+        <div className="relative">
+          <Search className="w-4 h-4 text-oterio-600 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              if (!e.target.value.trim()) {
+                setSearchScope('todos');
+              }
+            }}
+            placeholder="Buscar orden de trabajo (OT) o por cliente (muestra activos y terminados no eliminados)..."
+            className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-graphite-200 text-xs sm:text-sm font-medium text-graphite-900 placeholder:text-graphite-400 focus:ring-2 focus:ring-oterio-500 focus:border-oterio-400 bg-graphite-50/60 focus:bg-white transition-colors"
+          />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                setSearchScope('todos');
+              }}
+              title="Limpiar búsqueda"
+              aria-label="Limpiar búsqueda"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-graphite-400 hover:text-graphite-700 hover:bg-graphite-100 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {hasSearchQuery && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-xs">
+            <div className="flex flex-wrap items-center gap-1.5 text-graphite-600">
+              <span>
+                Resultados para <strong className="text-graphite-900">"{searchTerm.trim()}"</strong>:
+              </span>
+              <span className="font-mono font-bold text-graphite-800 bg-graphite-100 px-2 py-0.5 rounded-md tabular-nums">
+                {searchBaseMatches.length} {searchBaseMatches.length === 1 ? 'trabajo' : 'trabajos'}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1 bg-graphite-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setSearchScope('todos')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer tabular-nums ${
+                  searchScope === 'todos'
+                    ? 'bg-graphite-900 text-white shadow-2xs'
+                    : 'text-graphite-600 hover:text-graphite-900'
+                }`}
+              >
+                Todos ({searchBaseMatches.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSearchScope('activos')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer tabular-nums ${
+                  searchScope === 'activos'
+                    ? 'bg-oterio-600 text-white shadow-2xs'
+                    : 'text-graphite-600 hover:text-graphite-900'
+                }`}
+              >
+                Activos ({searchActiveCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSearchScope('completados')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer tabular-nums ${
+                  searchScope === 'completados'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'text-graphite-600 hover:text-graphite-900'
+                }`}
+              >
+                Terminados ({searchCompletedCount})
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* =========================================================================
          RESUMEN DE UN VISTAZO (AT-A-GLANCE EXECUTIVE STRIP)
@@ -414,10 +592,12 @@ export const JobsView: React.FC<JobsViewProps> = ({
               <strong className="font-mono tabular-nums">{activeJobsCount}</strong> Activas
             </span>
 
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-semibold border border-emerald-200">
-              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-              <strong className="font-mono tabular-nums">{completedJobsCount}</strong> Terminadas
-            </span>
+            {(!isOperario || hasSearchQuery) && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-semibold border border-emerald-200">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <strong className="font-mono tabular-nums">{completedJobsCount}</strong> Terminadas
+              </span>
+            )}
 
             {urgentJobsCount > 0 && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 font-bold border border-rose-200">
@@ -685,33 +865,24 @@ export const JobsView: React.FC<JobsViewProps> = ({
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white p-3.5 rounded-2xl border border-graphite-200 shadow-xs space-y-2.5">
-        <div className="relative">
-          <Search className="w-4 h-4 text-graphite-400 absolute left-3.5 top-3" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar por OT, cliente, notas o alertas..."
-            className="w-full pl-10 pr-4 py-2 rounded-xl border border-graphite-200 text-xs sm:text-sm focus:ring-2 focus:ring-oterio-500 bg-graphite-50/50"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+      {/* Filter Bar */}
+      <div className="bg-white p-3.5 rounded-2xl border border-graphite-200 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-graphite-200 bg-graphite-50 text-graphite-700"
           >
-            <option value="todos">Todos los Estados</option>
             <option value="activos">Sólo Activos</option>
-            <option value="completados">Sólo Terminados</option>
-            {statuses.map((st) => (
-              <option key={st.id} value={st.id}>
-                {st.name}
-              </option>
-            ))}
+            {!isOperario && <option value="todos">Todos los Estados</option>}
+            {!isOperario && <option value="completados">Sólo Terminados</option>}
+            {statuses
+              .filter((st) => !isOperario || !st.isCompleted)
+              .map((st) => (
+                <option key={st.id} value={st.id}>
+                  {st.name}
+                </option>
+              ))}
           </select>
 
           <select
@@ -769,7 +940,8 @@ export const JobsView: React.FC<JobsViewProps> = ({
           </button>
 
           {(searchTerm ||
-            statusFilter !== 'todos' ||
+            searchScope !== 'todos' ||
+            statusFilter !== 'activos' ||
             departmentFilter !== 'todos' ||
             operatorFilter !== 'todos' ||
             onlyUrgent ||
@@ -777,7 +949,8 @@ export const JobsView: React.FC<JobsViewProps> = ({
             <button
               onClick={() => {
                 setSearchTerm('');
-                setStatusFilter('todos');
+                setSearchScope('todos');
+                setStatusFilter('activos');
                 setDepartmentFilter('todos');
                 setOperatorFilter('todos');
                 setOnlyUrgent(false);
@@ -957,7 +1130,9 @@ export const JobsView: React.FC<JobsViewProps> = ({
                           className={`border-r border-b border-graphite-300 transition-all cursor-pointer relative group focus:outline-hidden focus:ring-2 focus:ring-oterio-500 hover:z-10 ${
                             isCompact ? 'p-2' : 'p-2.5'
                           } ${
-                            job.isUrgent
+                            status?.isCompleted
+                              ? 'bg-emerald-50/35 hover:bg-emerald-50/75 hover:ring-2 hover:ring-emerald-400'
+                              : job.isUrgent
                               ? 'bg-rose-50/30 hover:bg-rose-50/80 hover:ring-2 hover:ring-rose-400'
                               : 'bg-white hover:bg-oterio-50/50 hover:ring-2 hover:ring-oterio-500'
                           }`}
@@ -1009,16 +1184,37 @@ export const JobsView: React.FC<JobsViewProps> = ({
                                 )}
                               </div>
 
-                              {/* Status dot or tiny indicator */}
-                              <span
-                                className={`text-[9px] font-semibold px-1.5 py-0.2 rounded-full shrink-0 ${
-                                  status?.isCompleted
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : 'bg-graphite-100 text-graphite-700'
-                                }`}
-                              >
-                                {status?.name || 'En curso'}
-                              </span>
+                              {/* Status dot or tiny indicator + Admin Delete icon */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                <span
+                                  className={`text-[9px] font-semibold px-1.5 py-0.2 rounded-full ${
+                                    status?.isCompleted
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-graphite-100 text-graphite-700'
+                                  }`}
+                                >
+                                  {status?.name || 'En curso'}
+                                </span>
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    disabled={isDeletingId === job.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setDeleteTargetJob(job);
+                                    }}
+                                    title="Eliminar de la base de datos"
+                                    aria-label={`Eliminar ${job.ot} de la base de datos`}
+                                    className="p-1 rounded-md text-graphite-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-40"
+                                  >
+                                    {isDeletingId === job.id ? (
+                                      <Loader2 className="w-3 h-3 animate-spin text-rose-600" />
+                                    ) : (
+                                      <Trash2 className="w-3 h-3" />
+                                    )}
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
                             {/* Line 2 & 3 depending on Column Group */}
@@ -1240,6 +1436,26 @@ export const JobsView: React.FC<JobsViewProps> = ({
                             <ChevronDown className="w-3.5 h-3.5" />
                           </button>
                         </div>
+                      )}
+
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          disabled={isDeletingId === job.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTargetJob(job);
+                          }}
+                          title="Eliminar de la base de datos"
+                          aria-label={`Eliminar ${job.ot} de la base de datos`}
+                          className="p-1.5 rounded-lg text-graphite-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-40"
+                        >
+                          {isDeletingId === job.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1529,15 +1745,36 @@ export const JobsView: React.FC<JobsViewProps> = ({
                       </td>
 
                       <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenJobDetail(job);
-                          }}
-                          className="px-2.5 py-1 text-xs font-semibold text-oterio-600 hover:text-oterio-800 hover:bg-oterio-50 rounded-lg transition-colors cursor-pointer"
-                        >
-                          Abrir
-                        </button>
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenJobDetail(job);
+                            }}
+                            className="px-2.5 py-1 text-xs font-semibold text-oterio-600 hover:text-oterio-800 hover:bg-oterio-50 rounded-lg transition-colors cursor-pointer"
+                          >
+                            Abrir
+                          </button>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              disabled={isDeletingId === job.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTargetJob(job);
+                              }}
+                              title="Eliminar de la base de datos"
+                              aria-label={`Eliminar ${job.ot} de la base de datos`}
+                              className="p-1.5 rounded-lg text-graphite-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-40"
+                            >
+                              {isDeletingId === job.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
+                              ) : (
+                                <Trash2 className="w-4 h-4" />
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1547,6 +1784,22 @@ export const JobsView: React.FC<JobsViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Permanent Database Deletion Confirmation Modal */}
+      <ConfirmModal
+        isOpen={Boolean(deleteTargetJob)}
+        title="Eliminar trabajo de la base de datos"
+        message={
+          deleteTargetJob
+            ? `¿Confirmas que deseas eliminar definitivamente la orden ${deleteTargetJob.ot} (${deleteTargetJob.client}) de la base de datos? Esta acción no se puede deshacer.`
+            : ''
+        }
+        confirmText="Sí, eliminar"
+        cancelText="Cancelar"
+        isDanger
+        onConfirm={handleConfirmPermanentDelete}
+        onCancel={() => setDeleteTargetJob(null)}
+      />
     </div>
   );
 };
