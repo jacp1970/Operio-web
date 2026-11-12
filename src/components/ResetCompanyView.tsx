@@ -160,9 +160,6 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
                 <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-oterio-600/35 text-oterio-200 border border-oterio-400/35">
                   Empresa activa
                 </span>
-                <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded-md bg-white/15 text-white">
-                  Código: {currentCompany.code}
-                </span>
               </div>
               <h2 className="text-xl font-bold mt-1 text-white">{currentCompany.name}</h2>
               <p className="text-xs text-graphite-300 mt-0.5">
@@ -246,7 +243,7 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
                   Todas las alertas activas, notas de trabajo y notificaciones.
                 </li>
                 <li>
-                  <strong>Se conserva la empresa</strong> ({currentCompany.name} · {currentCompany.code}) y tu acceso de administrador.
+                  <strong>Se conserva la empresa</strong> ({currentCompany.name}) y tu acceso de administrador.
                 </li>
               </ul>
             </div>
@@ -377,7 +374,7 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
               </p>
               <ul className="space-y-1.5 text-rose-800/90 pl-5 list-disc marker:text-rose-500">
                 <li>
-                  <strong>Registro de la empresa:</strong> {currentCompany.name} ({currentCompany.code})
+                  <strong>Registro de la empresa:</strong> {currentCompany.name}
                 </li>
                 <li>
                   <strong>Partes de trabajo:</strong> {workOrders.length} OTs y todos los archivos PDF almacenados.
@@ -397,16 +394,13 @@ export const ResetCompanyView: React.FC<ResetCompanyViewProps> = ({ onCancel }) 
             {/* Safety Code Input */}
             <div className="mt-5 space-y-2">
               <label className="block text-xs font-bold text-graphite-700">
-                Para confirmar la eliminación permanente, escribe el código de la empresa:{' '}
-                <span className="font-mono px-2 py-0.5 rounded bg-graphite-100 text-graphite-900 select-all font-bold">
-                  {currentCompany.code}
-                </span>
+                Para confirmar la eliminación permanente, escribe el código de la empresa:
               </label>
               <input
                 type="text"
                 value={deleteConfirmCode}
                 onChange={(e) => setDeleteConfirmCode(e.target.value.toUpperCase())}
-                placeholder={`Escribe ${currentCompany.code} aquí`}
+                placeholder="Escribe el código de la empresa aquí"
                 className="w-full px-3.5 py-2.5 rounded-xl border border-graphite-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 text-xs font-mono font-bold tracking-wider uppercase transition-all"
                 disabled={isDeleting}
               />

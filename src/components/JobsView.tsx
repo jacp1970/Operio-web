@@ -800,19 +800,11 @@ export const JobsView: React.FC<JobsViewProps> = ({
           <h3 className="font-bold text-graphite-900 text-base">
             {workOrders.length === 0 ? 'No hay partes de trabajo registrados' : 'No se encontraron partes de trabajo'}
           </h3>
-          <p className="text-xs text-graphite-500 mt-1 mb-4">
+          <p className="text-xs text-graphite-500 mt-1">
             {workOrders.length === 0
-              ? 'Tu empresa está lista para empezar. Crea la primera orden de trabajo manual o subiendo un plano PDF.'
+              ? 'Tu empresa está lista para empezar. Pulsa "Añadir Trabajo" arriba para crear la primera orden de trabajo manual o subiendo un PDF.'
               : 'Prueba a modificar los filtros o el término de búsqueda.'}
           </p>
-          {canCreate && (
-            <button
-              onClick={onOpenNewJobModal}
-              className="px-4 py-2 rounded-xl bg-oterio-600 text-white text-xs font-bold hover:bg-oterio-700 cursor-pointer"
-            >
-              Crear nueva OT
-            </button>
-          )}
         </div>
       ) : viewMode === 'spreadsheet' ? (
         /* =========================================================================

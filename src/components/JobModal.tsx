@@ -97,9 +97,13 @@ export const JobModal: React.FC<JobModalProps> = ({
   const [showSessionsList, setShowSessionsList] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const modalBodyRef = useRef<HTMLDivElement | null>(null);
 
-  // Initialize form state
+  // Initialize form state ONLY when opening the modal or switching the selected job
+  // (avoids resetting user input or Gemini-extracted fields if Firestore snapshots arrive)
   useEffect(() => {
+    if (!isOpen) return;
+
     setShowDeleteConfirm(false);
     setIsAnalyzingPdf(false);
     setPdfSuccessNotice(null);
@@ -126,7 +130,7 @@ export const JobModal: React.FC<JobModalProps> = ({
       // New job defaults: OT starts empty so the user can enter their own work order number directly
       setOt('');
       setClient('');
-      setCreatedAt(new Date().toISOString().slice(0, 10)); // Generada automáticamente
+      setCreatedAt(new Date().toISOString().slice(0, 10));
       setDeliveryDate('');
       const defaultOp = users.find((u) => u.role === 'operario' || u.role === 'administrativo')?.id || '';
       setAssignedOperatorId(defaultOp);
@@ -141,7 +145,18 @@ export const JobModal: React.FC<JobModalProps> = ({
     }
     setNewAlertText('');
     setErrorMessage('');
-  }, [job, isOpen, users, departments, statuses]);
+  }, [job?.id, isOpen]);
+
+  // Fill empty department/status/operator defaults if Firestore data finishes loading after opening
+  useEffect(() => {
+    if (!isOpen || job) return;
+    if (!departmentId && departments.length > 0) {
+      setDepartmentId(departments[0].id);
+    }
+    if (!statusId && statuses.length > 0) {
+      setStatusId(statuses[0].id);
+    }
+  }, [isOpen, job, departments, statuses, departmentId, statusId]);
 
   // Live stopwatch tick effect: updates liveElapsedSeconds every second when isRunning is true
   useEffect(() => {
@@ -377,72 +392,98 @@ export const JobModal: React.FC<JobModalProps> = ({
     setHasAnalyzedPdf(false);
   };
 
+  const showValidationError = (msg: string) => {
+    setErrorMessage(msg);
+    setIsSaving(false);
+    if (modalBodyRef.current) {
+      modalBodyRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const toSafeIsoDate = (dateStr: string): string | undefined => {
+    if (!dateStr || !dateStr.trim()) return undefined;
+    const parsed = new Date(dateStr);
+    return isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+  };
+
   const handleSave = () => {
     setErrorMessage('');
     setIsSaving(true);
 
-    if (isCreating) {
-      if (!canCreateJob) {
-        setErrorMessage('Solo los administradores o administrativos pueden crear trabajos.');
-        setIsSaving(false);
-        return;
+    try {
+      if (isCreating) {
+        if (!canCreateJob) {
+          showValidationError('Solo los administradores o administrativos pueden crear trabajos.');
+          return;
+        }
+
+        if (!ot.trim()) {
+          showValidationError('El número de Orden de Trabajo (OT) es obligatorio.');
+          return;
+        }
+
+        if (!client.trim()) {
+          showValidationError('El cliente es obligatorio.');
+          return;
+        }
+
+        const res = createWorkOrder({
+          ot: ot.trim(),
+          client: client.trim(),
+          createdAt: toSafeIsoDate(createdAt) || new Date().toISOString(),
+          deliveryDate: deliveryDate.trim() || undefined,
+          assignedOperatorId,
+          departmentId: departmentId || departments[0]?.id || '',
+          statusId: statusId || statuses[0]?.id || '',
+          isUrgent,
+          notes,
+          pdfAttachment: attachedPdf || undefined,
+          timer,
+        });
+
+        if (!res.success) {
+          showValidationError(res.error || 'Error al crear trabajo');
+          return;
+        }
+      } else if (job) {
+        // Update existing
+        if (isReadOnly) {
+          showValidationError('El rol de sólo lectura no puede guardar cambios.');
+          return;
+        }
+
+        const safeCreatedAtIso = toSafeIsoDate(createdAt);
+        const updates: Partial<WorkOrder> = {
+          departmentId,
+          assignedOperatorId,
+          alerts,
+          notes,
+          statusId,
+          pdfAttachment: attachedPdf || undefined,
+          ...(safeCreatedAtIso ? { createdAt: safeCreatedAtIso } : {}),
+          timer,
+        };
+
+        if (isAdmin) {
+          updates.ot = ot.trim();
+          updates.client = client.trim();
+          updates.deliveryDate = deliveryDate.trim();
+          updates.isUrgent = isUrgent;
+        }
+
+        const res = updateWorkOrder(job.id, updates);
+        if (!res.success) {
+          showValidationError(res.error || 'Error al actualizar trabajo');
+          return;
+        }
       }
 
-      const res = createWorkOrder({
-        ot,
-        client,
-        createdAt: createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
-        deliveryDate: deliveryDate || undefined,
-        assignedOperatorId,
-        departmentId,
-        statusId,
-        isUrgent,
-        notes,
-        pdfAttachment: attachedPdf || undefined,
-        timer,
-      });
-
-      if (!res.success) {
-        setErrorMessage(res.error || 'Error al crear trabajo');
-        setIsSaving(false);
-        return;
-      }
-    } else if (job) {
-      // Update existing
-      if (isReadOnly) {
-        setErrorMessage('El rol de sólo lectura no puede guardar cambios.');
-        setIsSaving(false);
-        return;
-      }
-
-      const updates: Partial<WorkOrder> = {
-        departmentId,
-        assignedOperatorId,
-        alerts,
-        notes,
-        statusId,
-        pdfAttachment: attachedPdf || undefined,
-        ...(createdAt ? { createdAt: new Date(createdAt).toISOString() } : {}),
-        timer,
-      };
-
-      if (isAdmin) {
-        updates.ot = ot;
-        updates.client = client;
-        updates.deliveryDate = deliveryDate;
-        updates.isUrgent = isUrgent;
-      }
-
-      const res = updateWorkOrder(job.id, updates);
-      if (!res.success) {
-        setErrorMessage(res.error || 'Error al actualizar trabajo');
-        setIsSaving(false);
-        return;
-      }
+      setIsSaving(false);
+      onClose();
+    } catch (err: any) {
+      console.error('Error saving work order:', err);
+      showValidationError(err?.message || 'Ha ocurrido un error inesperado al guardar la orden de trabajo.');
     }
-
-    setIsSaving(false);
-    onClose();
   };
 
   const handleConfirmDelete = () => {
@@ -549,10 +590,11 @@ export const JobModal: React.FC<JobModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-5 sm:p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+        <div ref={modalBodyRef} className="p-5 sm:p-6 space-y-5 max-h-[75vh] overflow-y-auto">
           {errorMessage && (
-            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
-              {errorMessage}
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{errorMessage}</span>
             </div>
           )}
 
@@ -663,8 +705,10 @@ export const JobModal: React.FC<JobModalProps> = ({
                   {onOpenPdfViewer && (
                     <button
                       type="button"
+                      disabled={!currentAttachment.dataUrl}
                       onClick={() => onOpenPdfViewer(currentAttachment)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-graphite-100 text-graphite-700 hover:bg-graphite-200 transition-colors cursor-pointer"
+                      title={!currentAttachment.dataUrl ? 'Archivo grande guardado en sesión local del equipo original' : 'Ver PDF'}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-graphite-100 text-graphite-700 hover:bg-graphite-200 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <Eye className="w-3.5 h-3.5" />
                       <span>Ver</span>
@@ -673,8 +717,10 @@ export const JobModal: React.FC<JobModalProps> = ({
 
                   <button
                     type="button"
+                    disabled={!currentAttachment.dataUrl}
                     onClick={handleDownloadPdf}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-oterio-50 text-oterio-700 hover:bg-oterio-100 transition-colors cursor-pointer"
+                    title={!currentAttachment.dataUrl ? 'Archivo grande guardado en sesión local del equipo original' : 'Descargar PDF'}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-oterio-50 text-oterio-700 hover:bg-oterio-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Descargar</span>
@@ -1306,6 +1352,14 @@ export const JobModal: React.FC<JobModalProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Footer inline error notice so user never misses why save failed */}
+        {errorMessage && (
+          <div className="px-6 py-2.5 bg-rose-50 border-t border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
 
         {/* Modal Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-graphite-100 bg-graphite-50/70">

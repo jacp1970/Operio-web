@@ -5,7 +5,6 @@ import {
   Menu,
   Bell,
   ChevronDown,
-  PlusCircle,
   LogOut,
   Flame,
   AlertTriangle,
@@ -23,14 +22,12 @@ import { WorkOrder, AppNotification, NotificationType } from '../types';
 
 interface HeaderProps {
   onOpenMobileSidebar: () => void;
-  onOpenNewJobModal?: () => void;
   onOpenJobDetail?: (job: WorkOrder) => void;
   onOpenResetCompanyModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenMobileSidebar,
-  onOpenNewJobModal,
   onOpenJobDetail,
   onOpenResetCompanyModal,
 }) => {
@@ -132,11 +129,6 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="text-xs font-semibold uppercase tracking-wider text-graphite-500">
                   Plataforma de Operaciones
                 </span>
-                {currentCompany && (
-                  <span className="px-2 py-0.5 rounded-md bg-oterio-50 border border-oterio-200 text-oterio-700 font-mono text-[11px] font-bold">
-                    CÓD: {currentCompany.code}
-                  </span>
-                )}
               </div>
               <h1 className="text-sm font-bold text-graphite-900 flex items-center gap-2">
                 <span>Gestión de Partes de Trabajo</span>
@@ -148,20 +140,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right: Quick Role Switcher, Notifications, and Action */}
+        {/* Right: Quick Role Switcher & Notifications */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Create Job button for Administrator & Administrativo */}
-          {(currentUser.role === 'administrador' || currentUser.role === 'administrativo') && onOpenNewJobModal && (
-            <button
-              onClick={onOpenNewJobModal}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-oterio-600 text-white text-xs sm:text-sm font-semibold hover:bg-oterio-700 active:scale-95 transition-all shadow-xs cursor-pointer whitespace-nowrap shrink-0"
-              title="Añadir nuevo trabajo"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span className="hidden sm:inline">Nuevo Trabajo</span>
-              <span className="sm:hidden">Nuevo</span>
-            </button>
-          )}
 
           {/* Notifications bell button with dropdown */}
           {currentUser.role !== 'solo_lectura' && (
@@ -331,11 +311,8 @@ export const Header: React.FC<HeaderProps> = ({
                         : `Clave: ${currentUser.accessKey}`}
                     </p>
                     {currentCompany && (
-                      <div className="mt-2 pt-2 border-t border-graphite-100 flex items-center justify-between text-[11px]">
-                        <span className="text-graphite-500 truncate max-w-[120px]">{currentCompany.name}</span>
-                        <span className="font-mono font-bold text-oterio-700 bg-oterio-50 px-1.5 py-0.5 rounded text-[10px]">
-                          {currentCompany.code}
-                        </span>
+                      <div className="mt-2 pt-2 border-t border-graphite-100 flex items-center text-[11px]">
+                        <span className="text-graphite-500 truncate">{currentCompany.name}</span>
                       </div>
                     )}
                   </div>

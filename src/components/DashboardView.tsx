@@ -23,13 +23,11 @@ import { formatSecondsToHuman } from '../utils/timeUtils';
 
 interface DashboardViewProps {
   onOpenJobDetail: (job: WorkOrder) => void;
-  onOpenNewJobModal: () => void;
   onOpenResetCompanyModal?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenJobDetail,
-  onOpenNewJobModal,
   onOpenResetCompanyModal,
 }) => {
   const {
@@ -217,15 +215,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <p className="text-sm text-graphite-600 mt-1">
               Supervisión en tiempo real de órdenes de trabajo, alertas y asignaciones del taller.
             </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onOpenNewJobModal}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-oterio-600 text-white font-semibold text-sm hover:bg-oterio-700 shadow-sm transition-all cursor-pointer whitespace-nowrap shrink-0"
-            >
-              + Nuevo Trabajo
-            </button>
           </div>
         </div>
 
@@ -503,19 +492,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </h2>
             <p className="text-sm text-graphite-600 mt-1">
               {isAdministrativo
-                ? 'Supervisa tus trabajos asignados, cronometra tramos o pulsa "+ Nuevo Trabajo" para dar de alta nuevas órdenes.'
+                ? 'Supervisa tus trabajos asignados, cronometra tramos y gestiona el estado de las órdenes.'
                 : 'Revisa tus órdenes asignadas, consulta especificaciones, actualiza notas o añade alertas técnicas.'}
             </p>
           </div>
-
-          {isAdministrativo && (
-            <button
-              onClick={onOpenNewJobModal}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-oterio-600 text-white font-semibold text-sm hover:bg-oterio-700 shadow-sm transition-all shrink-0 cursor-pointer"
-            >
-              + Nuevo Trabajo
-            </button>
-          )}
         </div>
 
         {/* 3 Metric Cards matching PDF for Operario */}

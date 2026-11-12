@@ -81,7 +81,6 @@ function MainApp() {
         {/* Top Header with persistent logo, role switcher, and quick action */}
         <Header
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
-          onOpenNewJobModal={handleOpenNewJobModal}
           onOpenJobDetail={handleOpenJobDetail}
           onOpenResetCompanyModal={() => setResetCompanyModalOpen(true)}
         />
@@ -91,7 +90,6 @@ function MainApp() {
           {currentNav === 'panel_de_control' && (
             <DashboardView
               onOpenJobDetail={handleOpenJobDetail}
-              onOpenNewJobModal={handleOpenNewJobModal}
               onOpenResetCompanyModal={() => setResetCompanyModalOpen(true)}
             />
           )}

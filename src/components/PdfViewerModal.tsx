@@ -43,7 +43,8 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handleDownload}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-oterio-600 hover:bg-oterio-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              disabled={!attachment.dataUrl}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-oterio-600 hover:bg-oterio-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Download className="w-4 h-4" />
               <span>Descargar</span>
@@ -60,11 +61,23 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
 
         {/* PDF Frame / Preview Area */}
         <div className="flex-1 bg-graphite-100 p-2 sm:p-4 overflow-hidden flex flex-col">
-          <iframe
-            src={attachment.dataUrl}
-            title={attachment.name}
-            className="w-full h-full rounded-2xl border border-graphite-200 bg-white shadow-inner"
-          />
+          {attachment.dataUrl ? (
+            <iframe
+              src={attachment.dataUrl}
+              title={attachment.name}
+              className="w-full h-full rounded-2xl border border-graphite-200 bg-white shadow-inner"
+            />
+          ) : (
+            <div className="w-full h-full rounded-2xl border border-graphite-200 bg-white flex flex-col items-center justify-center p-6 text-center">
+              <FileText className="w-10 h-10 text-oterio-500 mb-3" />
+              <p className="text-sm font-bold text-graphite-900 mb-1">
+                Archivo adjunto demasiado grande para sincronización en la nube
+              </p>
+              <p className="text-xs text-graphite-500 max-w-md">
+                Este PDF supera el límite por documento de la base de datos y solo está disponible en la sesión del navegador desde la que se subió.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

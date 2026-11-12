@@ -8,6 +8,7 @@ import {
   WorkOrder,
   WorkAlert,
   WorkOrderParticipant,
+  PdfAttachment,
   AppNotification,
   NavigationItemKey,
 } from '../types';
@@ -143,6 +144,18 @@ function sanitizeForFirestore<T>(data: T): Record<string, unknown> {
   return JSON.parse(json);
 }
 
+// Firestore documents have a strict 1 MiB limit; Base64 PDFs larger than ~700 KB are cached in memory
+// and persisted with metadata in Firestore/localStorage so the work order always saves reliably.
+const MAX_INLINE_PDF_LENGTH = 700_000;
+
+function safeLocalStorageSet(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    console.warn(`LocalStorage write warning (${key}):`, err);
+  }
+}
+
 async function fsSet(collectionName: string, id: string, data: unknown) {
   try {
     const cleanData = sanitizeForFirestore(data);
@@ -236,6 +249,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentUserRef.current = currentUser;
   }, [currentUser]);
 
+  // In-memory cache for large PDF dataUrls (>700KB Base64) so they remain viewable during session
+  // without exceeding Firestore 1MB document size or localStorage quota limits
+  const largePdfCacheRef = useRef<Record<string, string>>({});
+
+  const sanitizePdfForStorage = (
+    workOrderId: string,
+    pdf?: PdfAttachment
+  ): PdfAttachment | undefined => {
+    if (!pdf) return undefined;
+    if (pdf.dataUrl && pdf.dataUrl.length > MAX_INLINE_PDF_LENGTH) {
+      largePdfCacheRef.current[`${workOrderId}::${pdf.uploadedAt}`] = pdf.dataUrl;
+      return {
+        name: pdf.name,
+        size: pdf.size,
+        dataUrl: '',
+        uploadedAt: pdf.uploadedAt,
+      };
+    }
+    return pdf;
+  };
+
   // ==========================================
   // REAL-TIME FIRESTORE SYNCHRONIZATION
   // ==========================================
@@ -318,12 +352,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (snapshot) => {
         setIsFirebaseConnected(true);
         const remoteOrders: WorkOrder[] = [];
-        snapshot.forEach((d) => remoteOrders.push(d.data() as WorkOrder));
-        remoteOrders.sort(
-          (a, b) =>
-            new Date(b.updatedAt || b.createdAt).getTime() -
-            new Date(a.updatedAt || a.createdAt).getTime()
-        );
+        snapshot.forEach((d) => {
+          let order = d.data() as WorkOrder;
+          if (order.pdfAttachment && !order.pdfAttachment.dataUrl) {
+            const cachedUrl =
+              largePdfCacheRef.current[`${order.id}::${order.pdfAttachment.uploadedAt}`];
+            if (cachedUrl) {
+              order = {
+                ...order,
+                pdfAttachment: { ...order.pdfAttachment, dataUrl: cachedUrl },
+              };
+            }
+          }
+          remoteOrders.push(order);
+        });
+        remoteOrders.sort((a, b) => {
+          const tB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+          const tA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+          return (isNaN(tB) ? 0 : tB) - (isNaN(tA) ? 0 : tA);
+        });
         setAllWorkOrders(remoteOrders);
       },
       (err) => {
@@ -360,34 +407,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Local storage persistence backups
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.COMPANIES, JSON.stringify(companies));
+    safeLocalStorageSet(STORAGE_KEYS.COMPANIES, JSON.stringify(companies));
   }, [companies]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(allUsers));
+    safeLocalStorageSet(STORAGE_KEYS.USERS, JSON.stringify(allUsers));
   }, [allUsers]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(allDepartments));
+    safeLocalStorageSet(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(allDepartments));
   }, [allDepartments]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.STATUSES, JSON.stringify(allStatuses));
+    safeLocalStorageSet(STORAGE_KEYS.STATUSES, JSON.stringify(allStatuses));
   }, [allStatuses]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.WORK_ORDERS, JSON.stringify(allWorkOrders));
+    const compactOrders = allWorkOrders.map((wo) =>
+      wo.pdfAttachment && wo.pdfAttachment.dataUrl.length > MAX_INLINE_PDF_LENGTH
+        ? {
+            ...wo,
+            pdfAttachment: sanitizePdfForStorage(wo.id, wo.pdfAttachment),
+          }
+        : wo
+    );
+    safeLocalStorageSet(STORAGE_KEYS.WORK_ORDERS, JSON.stringify(compactOrders));
   }, [allWorkOrders]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(allNotifications));
+    safeLocalStorageSet(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(allNotifications));
   }, [allNotifications]);
 
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
+      safeLocalStorageSet(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
     } else {
-      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      try {
+        localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      } catch {
+        /* ignore */
+      }
     }
   }, [currentUser]);
 
@@ -1031,7 +1090,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const initialOrderPosition = data.orderPosition ?? currentCompanyJobs.length;
 
     // Build the initial people traceability trail starting from creator Administrator or Administrativo
-    const creationTime = data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString();
+    const parsedCreated = data.createdAt ? new Date(data.createdAt) : new Date();
+    const creationTime = !isNaN(parsedCreated.getTime())
+      ? parsedCreated.toISOString()
+      : new Date().toISOString();
     const deptName = getDepartmentName(data.departmentId);
     const statName = getStatus(data.statusId || statuses[0]?.id || '')?.name || 'Pendiente';
     const creatorRoleLabel = currentUser.role === 'administrador' ? 'Administrador' : 'Administrativo';
@@ -1074,8 +1136,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
+    const newId = `wo-${Date.now()}`;
     const newOrder: WorkOrder = {
-      id: `wo-${Date.now()}`,
+      id: newId,
       companyId,
       ot: data.ot.trim().toUpperCase(),
       client: data.client.trim(),
@@ -1096,10 +1159,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timer: data.timer,
     };
 
+    const firestoreOrder: WorkOrder = {
+      ...newOrder,
+      pdfAttachment: sanitizePdfForStorage(newId, newOrder.pdfAttachment),
+    };
+
     setAllWorkOrders((prev) => [newOrder, ...prev]);
 
-    // Sync new Work Order to Firestore
-    fsSet('workOrders', newOrder.id, newOrder);
+    // Sync new Work Order to Firestore (always <= 1MB)
+    fsSet('workOrders', newOrder.id, firestoreOrder);
 
     if (newOrder.assignedOperatorId) {
       sendNotification({
@@ -1330,8 +1398,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((w) => (w.id === id ? { ...w, ...finalUpdates } : w))
     );
 
+    const firestoreUpdates: Partial<WorkOrder> = {
+      ...finalUpdates,
+      ...(finalUpdates.pdfAttachment !== undefined
+        ? { pdfAttachment: sanitizePdfForStorage(id, finalUpdates.pdfAttachment) }
+        : {}),
+    };
+
     // Sync updates to Firestore
-    fsUpdate('workOrders', id, finalUpdates);
+    fsUpdate('workOrders', id, firestoreUpdates);
 
     return { success: true };
   };

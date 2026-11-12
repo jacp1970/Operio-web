@@ -237,12 +237,11 @@ export const UsersView: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-md bg-oterio-50 text-oterio-800 border border-oterio-200/80 text-[11px] font-bold tracking-wide uppercase font-mono">
-              Código Empresa: {currentCompany?.code}
-            </span>
-            <span className="text-xs text-graphite-400 font-medium">({currentCompany?.name})</span>
-          </div>
+          {currentCompany && (
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs text-graphite-500 font-semibold">{currentCompany.name}</span>
+            </div>
+          )}
           <h2 className="text-2xl font-black text-graphite-900 tracking-tight">
             Gestión de Usuarios y Permisos
           </h2>
@@ -302,10 +301,6 @@ export const UsersView: React.FC = () => {
 
                 {/* Credenciales de acceso adjudicadas */}
                 <div className="mb-3 p-2.5 rounded-xl bg-graphite-50 border border-graphite-200/80 space-y-1">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-graphite-500 font-medium">Código Empresa:</span>
-                    <span className="font-mono font-bold text-graphite-900">{currentCompany?.code}</span>
-                  </div>
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-graphite-500 font-medium">Clave adjudicada:</span>
                     <span className="font-mono font-black text-oterio-700 bg-white px-2 py-0.5 rounded border border-oterio-200/80">

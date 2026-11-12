@@ -181,12 +181,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
         </div>
 
         {currentCompany && (
-          <div className="pt-2 border-t border-graphite-200/70 flex items-center justify-between text-[11px]">
-            <span className="text-graphite-500 truncate max-w-[110px]" title={currentCompany.name}>
+          <div className="pt-2 border-t border-graphite-200/70 flex items-center text-[11px]">
+            <span className="text-graphite-500 truncate font-medium" title={currentCompany.name}>
               {currentCompany.name}
-            </span>
-            <span className="font-mono font-bold text-oterio-700 bg-oterio-50 px-2 py-0.5 rounded border border-oterio-200/80">
-              {currentCompany.code}
             </span>
           </div>
         )}

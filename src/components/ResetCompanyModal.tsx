@@ -103,7 +103,7 @@ export const ResetCompanyModal: React.FC<ResetCompanyModalProps> = ({
           )}
 
           {/* Current Company Box */}
-          <div className="p-4 rounded-2xl bg-graphite-50 border border-graphite-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="p-4 rounded-2xl bg-graphite-50 border border-graphite-200 flex items-center justify-between gap-3">
             <div>
               <span className="text-xs text-graphite-400 font-semibold uppercase tracking-wider block">
                 Empresa seleccionada
@@ -112,14 +112,6 @@ export const ResetCompanyModal: React.FC<ResetCompanyModalProps> = ({
                 <Building2 className="w-4 h-4 text-graphite-500" />
                 <span>{currentCompany.name}</span>
               </p>
-            </div>
-            <div className="self-start sm:self-auto">
-              <span className="text-xs text-graphite-400 font-semibold uppercase tracking-wider block">
-                Código de Empresa
-              </span>
-              <span className="font-mono text-sm font-black text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 inline-block mt-0.5">
-                {currentCompany.code}
-              </span>
             </div>
           </div>
 
@@ -172,14 +164,14 @@ export const ResetCompanyModal: React.FC<ResetCompanyModalProps> = ({
           {/* Security confirmation text input */}
           <div className="pt-1">
             <label className="block text-xs font-bold text-graphite-800 mb-1.5">
-              Para confirmar, escribe el código de la empresa (<span className="font-mono text-rose-700">{currentCompany.code}</span>):
+              Para confirmar, escribe el código de la empresa:
             </label>
             <input
               type="text"
               disabled={isDeleting}
               value={confirmCodeInput}
               onChange={(e) => setConfirmCodeInput(e.target.value)}
-              placeholder={`Escribe ${currentCompany.code} aquí`}
+              placeholder="Escribe el código de la empresa aquí"
               className="w-full text-sm font-mono font-bold tracking-wider px-3.5 py-2.5 rounded-xl border border-graphite-300 focus:ring-2 focus:ring-rose-500 bg-graphite-50/50 uppercase"
             />
             <p className="text-[11px] text-graphite-400 mt-1">
