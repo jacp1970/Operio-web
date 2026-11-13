@@ -6,6 +6,7 @@ import {
   formatSecondsToHuman,
   computeLiveTimerSeconds,
 } from '../utils/timeUtils';
+import { findPendingStatus } from '../utils/statusUtils';
 import {
   X,
   FileText,
@@ -82,6 +83,8 @@ export const JobModal: React.FC<JobModalProps> = ({
   const [errorMessage, setErrorMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [reassignedPendingNotice, setReassignedPendingNotice] = useState(false);
+  const [hasManuallyEditedStatus, setHasManuallyEditedStatus] = useState(false);
 
   // PDF Attachment and Gemini multimodal extraction state
   const [attachedPdf, setAttachedPdf] = useState<PdfAttachment | null>(null);
@@ -105,6 +108,8 @@ export const JobModal: React.FC<JobModalProps> = ({
     if (!isOpen) return;
 
     setShowDeleteConfirm(false);
+    setReassignedPendingNotice(false);
+    setHasManuallyEditedStatus(false);
     setIsAnalyzingPdf(false);
     setPdfSuccessNotice(null);
     setPdfErrorNotice(null);
@@ -948,7 +953,25 @@ export const JobModal: React.FC<JobModalProps> = ({
               <select
                 disabled={isReadOnly}
                 value={assignedOperatorId}
-                onChange={(e) => setAssignedOperatorId(e.target.value)}
+                onChange={(e) => {
+                  const nextOperatorId = e.target.value;
+                  setAssignedOperatorId(nextOperatorId);
+                  if (!isCreating && job && job.assignedOperatorId) {
+                    if (nextOperatorId && nextOperatorId !== job.assignedOperatorId) {
+                      const pendingStatus = findPendingStatus(statuses);
+                      if (pendingStatus) {
+                        setStatusId(pendingStatus.id);
+                        setHasManuallyEditedStatus(false);
+                        setReassignedPendingNotice(true);
+                      }
+                    } else if (nextOperatorId === job.assignedOperatorId && !hasManuallyEditedStatus) {
+                      setStatusId(job.statusId || '');
+                      setReassignedPendingNotice(false);
+                    } else {
+                      setReassignedPendingNotice(false);
+                    }
+                  }
+                }}
                 className={`w-full text-sm px-3.5 py-2.5 rounded-xl border ${
                   isReadOnly
                     ? 'bg-graphite-100 text-graphite-500 cursor-not-allowed'
@@ -975,7 +998,11 @@ export const JobModal: React.FC<JobModalProps> = ({
             <select
               disabled={isReadOnly}
               value={statusId}
-              onChange={(e) => setStatusId(e.target.value)}
+              onChange={(e) => {
+                setStatusId(e.target.value);
+                setHasManuallyEditedStatus(true);
+                setReassignedPendingNotice(false);
+              }}
               className={`w-full text-sm font-semibold px-3.5 py-2.5 rounded-xl border ${
                 isReadOnly
                   ? 'bg-graphite-100 text-graphite-500 cursor-not-allowed'
@@ -988,6 +1015,11 @@ export const JobModal: React.FC<JobModalProps> = ({
                 </option>
               ))}
             </select>
+            {reassignedPendingNotice && (
+              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-1.5 font-medium">
+                Al pasar el trabajo a otro operario, el estado pasa automáticamente a <strong>Pendiente</strong>.
+              </p>
+            )}
           </div>
 
           {/* ======================================================== */}

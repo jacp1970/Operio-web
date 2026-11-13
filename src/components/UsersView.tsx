@@ -10,16 +10,15 @@ import {
   Shield,
   Wrench,
   Eye,
-  Key,
   Copy,
   Check,
   Building,
   Info,
-  Sparkles,
   FileText,
   ShieldAlert,
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
+import { validateDniOrNie } from '../utils/cifValidation';
 
 export const UsersView: React.FC = () => {
   const {
@@ -61,9 +60,8 @@ export const UsersView: React.FC = () => {
     setEditingUserId(null);
     setRole('operario');
     setName('');
-    const randomSuffix = Math.floor(100 + Math.random() * 900);
-    setAccessKey(`OP-${randomSuffix}`);
-    setAccessKeyConfirm(`OP-${randomSuffix}`);
+    setAccessKey('');
+    setAccessKeyConfirm('');
     setAdminCompanyCif(currentCompany?.cif || '');
     setAdminCompanyCode(currentCompany?.code || '');
     setSelectedDeptIds(departments.length > 0 ? [departments[0].id] : []);
@@ -95,21 +93,6 @@ export const UsersView: React.FC = () => {
     }
   };
 
-  const generateSuggestionKey = () => {
-    const prefix =
-      role === 'operario'
-        ? 'OP'
-        : role === 'administrativo'
-        ? 'ADM'
-        : role === 'solo_lectura'
-        ? 'LEC'
-        : 'ADMIN';
-    const num = Math.floor(100 + Math.random() * 900);
-    const suggested = `${prefix}-${num}`;
-    setAccessKey(suggested);
-    setAccessKeyConfirm(suggested);
-  };
-
   const handleSave = () => {
     setErrorMsg('');
 
@@ -122,17 +105,31 @@ export const UsersView: React.FC = () => {
       setErrorMsg(
         role === 'administrador'
           ? 'Debes introducir la contraseña por partida doble.'
-          : 'Debes introducir la clave de acceso por partida doble.'
+          : 'Debes introducir el DNI/NIE del usuario por partida doble.'
       );
       return;
     }
 
-    if (accessKey.trim() !== accessKeyConfirm.trim()) {
-      setErrorMsg(
-        role === 'administrador'
-          ? 'Las dos contraseñas no coinciden.'
-          : 'Las dos claves de acceso no coinciden.'
-      );
+    let normalizedAccessKey = accessKey.trim();
+
+    if (role !== 'administrador') {
+      const dniCheck = validateDniOrNie(accessKey);
+      if (!dniCheck.valid) {
+        setErrorMsg(dniCheck.error || 'El DNI/NIE no es válido.');
+        return;
+      }
+      const dniConfirmCheck = validateDniOrNie(accessKeyConfirm);
+      if (!dniConfirmCheck.valid) {
+        setErrorMsg('La confirmación del DNI/NIE no tiene un formato válido.');
+        return;
+      }
+      if (dniCheck.formatted !== dniConfirmCheck.formatted) {
+        setErrorMsg('Los dos DNI/NIE introducidos no coinciden.');
+        return;
+      }
+      normalizedAccessKey = dniCheck.formatted;
+    } else if (accessKey.trim() !== accessKeyConfirm.trim()) {
+      setErrorMsg('Las dos contraseñas no coinciden.');
       return;
     }
 
@@ -159,7 +156,7 @@ export const UsersView: React.FC = () => {
       const res = updateUser(editingUserId, {
         name: name.trim(),
         role,
-        accessKey: accessKey.trim(),
+        accessKey: normalizedAccessKey,
         departmentIds: selectedDeptIds,
       });
 
@@ -171,8 +168,8 @@ export const UsersView: React.FC = () => {
       const res = createUser({
         role,
         name: name.trim(),
-        accessKey: accessKey.trim(),
-        accessKeyConfirm: accessKeyConfirm.trim(),
+        accessKey: normalizedAccessKey,
+        accessKeyConfirm: normalizedAccessKey,
         departmentIds: selectedDeptIds,
       });
 
@@ -200,7 +197,8 @@ export const UsersView: React.FC = () => {
   };
 
   const handleCopyCredentials = (u: User) => {
-    const creds = `Empresa: ${currentCompany?.code || ''}\nUsuario: ${u.name}\nClave de acceso: ${u.accessKey}`;
+    const keyLabel = u.role === 'administrador' ? 'Contraseña' : 'Clave de acceso (DNI/NIE)';
+    const creds = `Empresa: ${currentCompany?.code || ''}\nUsuario: ${u.name}\n${keyLabel}: ${u.accessKey}`;
     navigator.clipboard?.writeText(creds);
     setCopiedKeyUserId(u.id);
     setTimeout(() => setCopiedKeyUserId(null), 2500);
@@ -287,7 +285,7 @@ export const UsersView: React.FC = () => {
                           CIF: {currentCompany?.cif || '-'}
                         </p>
                       ) : (
-                        <p className="text-[11px] text-graphite-400 font-medium font-mono">Clave: {u.accessKey}</p>
+                        <p className="text-[11px] text-graphite-400 font-medium font-mono">DNI/NIE: {u.accessKey}</p>
                       )}
                     </div>
                   </div>
@@ -304,7 +302,9 @@ export const UsersView: React.FC = () => {
                 {/* Credenciales de acceso adjudicadas */}
                 <div className="mb-3 p-2.5 rounded-xl bg-graphite-50 border border-graphite-200/80 space-y-1">
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-graphite-500 font-medium">Clave adjudicada:</span>
+                    <span className="text-graphite-500 font-medium">
+                      {isAdmin ? 'Clave adjudicada:' : 'DNI/NIE (Clave):'}
+                    </span>
                     <span className="font-mono font-black text-oterio-700 bg-white px-2 py-0.5 rounded border border-oterio-200/80">
                       {u.accessKey}
                     </span>
@@ -421,12 +421,11 @@ export const UsersView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      setRole('operario');
-                      if (!editingUserId) {
-                        const num = Math.floor(100 + Math.random() * 900);
-                        setAccessKey(`OP-${num}`);
-                        setAccessKeyConfirm(`OP-${num}`);
+                      if (!editingUserId && role === 'administrador') {
+                        setAccessKey('');
+                        setAccessKeyConfirm('');
                       }
+                      setRole('operario');
                     }}
                     className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
                       role === 'operario'
@@ -441,12 +440,11 @@ export const UsersView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      setRole('administrativo');
-                      if (!editingUserId) {
-                        const num = Math.floor(100 + Math.random() * 900);
-                        setAccessKey(`ADM-${num}`);
-                        setAccessKeyConfirm(`ADM-${num}`);
+                      if (!editingUserId && role === 'administrador') {
+                        setAccessKey('');
+                        setAccessKeyConfirm('');
                       }
+                      setRole('administrativo');
                     }}
                     className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
                       role === 'administrativo'
@@ -461,12 +459,11 @@ export const UsersView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      setRole('solo_lectura');
-                      if (!editingUserId) {
-                        const num = Math.floor(100 + Math.random() * 900);
-                        setAccessKey(`LEC-${num}`);
-                        setAccessKeyConfirm(`LEC-${num}`);
+                      if (!editingUserId && role === 'administrador') {
+                        setAccessKey('');
+                        setAccessKeyConfirm('');
                       }
+                      setRole('solo_lectura');
                     }}
                     className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
                       role === 'solo_lectura'
@@ -481,12 +478,11 @@ export const UsersView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      setRole('administrador');
-                      if (!editingUserId) {
-                        const num = Math.floor(100 + Math.random() * 900);
-                        setAccessKey(`ADMIN-${num}`);
-                        setAccessKeyConfirm(`ADMIN-${num}`);
+                      if (!editingUserId && role !== 'administrador') {
+                        setAccessKey('');
+                        setAccessKeyConfirm('');
                       }
+                      setRole('administrador');
                     }}
                     className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
                       role === 'administrador'
@@ -503,7 +499,7 @@ export const UsersView: React.FC = () => {
                   <p className="text-[11px] text-blue-800 bg-blue-50/80 border border-blue-200/80 p-2.5 rounded-xl mt-2 flex items-start gap-1.5">
                     <Info className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
                     <span>
-                      <strong>Rol Administrativo:</strong> Mismos permisos que un operario (acceso por clave, visualización de trabajos, tramos de cronómetro, notas y alertas) <strong>más el poder crear nuevas órdenes de trabajo</strong>.
+                      <strong>Rol Administrativo:</strong> Mismos permisos que un operario (acceso por DNI/NIE, visualización de trabajos, tramos de cronómetro, notas y alertas) <strong>más el poder crear nuevas órdenes de trabajo</strong>.
                     </span>
                   </p>
                 )}
@@ -523,52 +519,48 @@ export const UsersView: React.FC = () => {
                 />
               </div>
 
-              {/* Si es Operario, Administrativo o Sólo Lectura: clave adjudicada */}
+              {/* Si es Operario, Administrativo o Sólo Lectura: clave de acceso = DNI / NIE */}
               {role !== 'administrador' ? (
                 <div className="space-y-3 p-3.5 bg-graphite-50 rounded-2xl border border-graphite-200/80">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="text-xs font-bold text-graphite-800">
-                        Clave de acceso adjudicada
-                      </span>
-                      <p className="text-[11px] text-graphite-500 mt-0.5">
-                        Clave personal adjudicada al usuario para identificarse.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={generateSuggestionKey}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-oterio-700 bg-oterio-50 hover:bg-oterio-100 rounded-lg transition-colors cursor-pointer shrink-0"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      Sugerir
-                    </button>
+                  <div>
+                    <span className="text-xs font-bold text-graphite-800">
+                      Clave de acceso: DNI / NIE del operario
+                    </span>
+                    <p className="text-[11px] text-graphite-500 mt-0.5">
+                      Introduce los 8 números y la letra (ej. 12345678Z) o formato NIE (ej. X1234567L).
+                    </p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[11px] font-bold text-graphite-600 uppercase mb-1">
-                        Clave adjudicada *
+                        DNI / NIE (Clave) *
                       </label>
                       <input
                         type="text"
+                        maxLength={9}
                         value={accessKey}
-                        onChange={(e) => setAccessKey(e.target.value)}
-                        placeholder="Ej. OP-101"
-                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-graphite-300 bg-white font-mono font-bold focus:ring-2 focus:ring-oterio-500"
+                        onChange={(e) =>
+                          setAccessKey(e.target.value.toUpperCase().replace(/[\s-]/g, ''))
+                        }
+                        placeholder="Ej. 12345678Z"
+                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-graphite-300 bg-white font-mono font-bold uppercase focus:ring-2 focus:ring-oterio-500"
                       />
                     </div>
 
                     <div>
                       <label className="block text-[11px] font-bold text-graphite-600 uppercase mb-1">
-                        Confirmar clave adjudicada *
+                        Confirmar DNI / NIE *
                       </label>
                       <input
                         type="text"
+                        maxLength={9}
                         value={accessKeyConfirm}
-                        onChange={(e) => setAccessKeyConfirm(e.target.value)}
-                        placeholder="Repite la clave"
-                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-graphite-300 bg-white font-mono font-bold focus:ring-2 focus:ring-oterio-500"
+                        onChange={(e) =>
+                          setAccessKeyConfirm(e.target.value.toUpperCase().replace(/[\s-]/g, ''))
+                        }
+                        placeholder="Repite el DNI/NIE"
+                        className="w-full text-xs sm:text-sm px-3 py-2 rounded-xl border border-graphite-300 bg-white font-mono font-bold uppercase focus:ring-2 focus:ring-oterio-500"
                       />
                     </div>
                   </div>

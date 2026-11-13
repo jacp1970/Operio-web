@@ -30,7 +30,8 @@ import {
   deleteDoc,
   onSnapshot,
 } from 'firebase/firestore';
-import { validateCifOrNif } from '../utils/cifValidation';
+import { validateCifOrNif, validateDniOrNie } from '../utils/cifValidation';
+import { findPendingStatus } from '../utils/statusUtils';
 
 interface AppContextType {
   currentUser: User | null;
@@ -620,10 +621,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: `No se encuentra ninguna empresa con el código "${companyCode}".` };
     }
 
+    const normalizedInputKey = trimmedKey.toUpperCase().replace(/[\s-]/g, '');
     const matchingCompanyIds = matchingCompanies.map((c) => c.id);
-    const matchedUser = allUsers.find(
-      (u) => matchingCompanyIds.includes(u.companyId) && u.accessKey.trim() === trimmedKey
-    );
+    const matchedUser = allUsers.find((u) => {
+      if (!matchingCompanyIds.includes(u.companyId)) return false;
+      if (u.role === 'administrador') {
+        return u.accessKey.trim() === trimmedKey;
+      }
+      return (
+        u.accessKey.trim().toUpperCase().replace(/[\s-]/g, '') === normalizedInputKey
+      );
+    });
 
     if (!matchedUser) {
       return {
@@ -1218,6 +1226,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       delete finalUpdates.deliveryDate;
     }
 
+    // Al pasar un trabajo asignado de un operario a otro operario, el estado pasa automáticamente a Pendiente
+    const companyStatuses = allStatuses.filter((s) => s.companyId === existing.companyId);
+    const isOperatorHandoff = Boolean(
+      existing.assignedOperatorId &&
+        updates.assignedOperatorId &&
+        updates.assignedOperatorId !== existing.assignedOperatorId
+    );
+    const pendingStatus = isOperatorHandoff ? findPendingStatus(companyStatuses) : undefined;
+    const requestedStatusObj = updates.statusId ? getStatus(updates.statusId) : undefined;
+    const shouldResetToPending =
+      isOperatorHandoff &&
+      Boolean(pendingStatus) &&
+      (updates.statusId === undefined ||
+        updates.statusId === existing.statusId ||
+        Boolean(requestedStatusObj?.isCompleted));
+
+    const resolvedStatusId =
+      shouldResetToPending && pendingStatus
+        ? pendingStatus.id
+        : updates.statusId !== undefined
+        ? updates.statusId
+        : existing.statusId;
+
+    if (shouldResetToPending && pendingStatus) {
+      finalUpdates.statusId = pendingStatus.id;
+    }
+
     // Build or inherit people traceability history
     const baseHistory: WorkOrderParticipant[] =
       existing.participantsHistory && existing.participantsHistory.length > 0
@@ -1228,7 +1263,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nowIso = new Date().toISOString();
     const effectiveDeptId = updates.departmentId || existing.departmentId;
     const effectiveDeptName = getDepartmentName(effectiveDeptId);
-    const effectiveStatusId = updates.statusId || existing.statusId;
+    const effectiveStatusId = resolvedStatusId;
     const effectiveStatusName = getStatus(effectiveStatusId)?.name || 'Pendiente';
 
     // 1. Did the assigned operator change? (Pase de trabajo entre operarios / admin)
@@ -1296,8 +1331,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // 3. Did the status change?
-    if (updates.statusId !== undefined && updates.statusId !== existing.statusId) {
-      const newStatusName = getStatus(updates.statusId)?.name || 'Nuevo estado';
+    if (resolvedStatusId && resolvedStatusId !== existing.statusId) {
+      const newStatusName = getStatus(resolvedStatusId)?.name || 'Nuevo estado';
       newHistoryEntries.push({
         id: `part-${Date.now()}-stat-${Math.random().toString(36).substring(2, 5)}`,
         userId: currentUser.id,
@@ -1307,10 +1342,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         actionLabel: `Estado actualizado a "${newStatusName}" por ${currentUser.name}`,
         departmentId: effectiveDeptId,
         departmentName: effectiveDeptName,
-        statusId: updates.statusId,
+        statusId: resolvedStatusId,
         statusName: newStatusName,
         timestamp: nowIso,
-        notes: `Cambio de estado de la orden`,
+        notes: shouldResetToPending
+          ? 'Estado cambiado automáticamente a Pendiente al pasar el trabajo a otro operario'
+          : 'Cambio de estado de la orden',
       });
     }
 
@@ -1369,9 +1406,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Status change notifications
-    if (updates.statusId && updates.statusId !== existing.statusId) {
+    if (resolvedStatusId && resolvedStatusId !== existing.statusId) {
       const oldStatus = getStatus(existing.statusId)?.name || 'Anterior';
-      const newStatus = getStatus(updates.statusId)?.name || 'Nuevo';
+      const newStatus = getStatus(resolvedStatusId)?.name || 'Nuevo';
 
       if (currentUser.role === 'operario' || currentUser.role === 'administrativo') {
         const actorLabel = currentUser.role === 'administrativo' ? 'El administrativo' : 'El operario';
@@ -1454,6 +1491,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updates: Partial<WorkOrder> = {
       assignedOperatorId: targetOperatorId,
     };
+    if (existing.assignedOperatorId && targetOperatorId && targetOperatorId !== existing.assignedOperatorId) {
+      const companyStatuses = allStatuses.filter((s) => s.companyId === existing.companyId);
+      const pendingStatus = findPendingStatus(companyStatuses);
+      if (pendingStatus) {
+        updates.statusId = pendingStatus.id;
+      }
+    }
     if (targetDepartmentId) {
       updates.departmentId = targetDepartmentId;
     }
@@ -1915,21 +1959,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     if (!data.name.trim()) return { success: false, error: 'El nombre es obligatorio.' };
     if (!data.accessKey || !data.accessKeyConfirm) {
-      return { success: false, error: 'Introduce la clave de acceso adjudicada por partida doble.' };
+      return {
+        success: false,
+        error:
+          data.role === 'administrador'
+            ? 'Introduce la contraseña del administrador por partida doble.'
+            : 'Introduce el DNI/NIE del usuario por partida doble.',
+      };
     }
-    if (data.accessKey !== data.accessKeyConfirm) {
-      return { success: false, error: 'Las dos claves de acceso no coinciden.' };
+
+    let finalKey = data.accessKey.trim();
+
+    if (data.role !== 'administrador') {
+      const dniValidation = validateDniOrNie(data.accessKey);
+      if (!dniValidation.valid) {
+        return { success: false, error: dniValidation.error || 'DNI/NIE inválido.' };
+      }
+      const dniConfirmValidation = validateDniOrNie(data.accessKeyConfirm);
+      if (!dniConfirmValidation.valid) {
+        return { success: false, error: 'La confirmación del DNI/NIE no tiene un formato válido.' };
+      }
+      if (dniValidation.formatted !== dniConfirmValidation.formatted) {
+        return { success: false, error: 'Los dos DNI/NIE introducidos no coinciden.' };
+      }
+      finalKey = dniValidation.formatted;
+    } else if (data.accessKey !== data.accessKeyConfirm) {
+      return { success: false, error: 'Las dos contraseñas no coinciden.' };
     }
 
     // Check key uniqueness within this company
-    const keyTrimmed = data.accessKey.trim();
     const existingWithKey = allUsers.find(
-      (u) => u.companyId === companyId && u.accessKey.trim().toLowerCase() === keyTrimmed.toLowerCase()
+      (u) =>
+        u.companyId === companyId &&
+        u.accessKey.trim().toUpperCase().replace(/[\s-]/g, '') ===
+          finalKey.toUpperCase().replace(/[\s-]/g, '')
     );
     if (existingWithKey) {
       return {
         success: false,
-        error: `La clave de acceso "${keyTrimmed}" ya está asignada a "${existingWithKey.name}". Asigna una clave única.`,
+        error:
+          data.role === 'administrador'
+            ? `La clave de acceso "${finalKey}" ya está asignada a "${existingWithKey.name}".`
+            : `El DNI/NIE "${finalKey}" ya está asignado al usuario "${existingWithKey.name}".`,
       };
     }
 
@@ -1937,7 +2008,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `user-${Date.now()}`,
       companyId,
       name: data.name.trim(),
-      accessKey: keyTrimmed,
+      accessKey: finalKey,
       role: data.role,
       departmentIds: data.departmentIds,
       email: data.email ? data.email.trim().toLowerCase() : undefined,
@@ -1953,8 +2024,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!currentUser || currentUser.role !== 'administrador') {
       return { success: false, error: 'Solo el administrador puede editar usuarios.' };
     }
-    setAllUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...data } : u)));
-    fsUpdate('users', id, data);
+
+    const existingUser = allUsers.find((u) => u.id === id);
+    if (!existingUser) {
+      return { success: false, error: 'Usuario no encontrado.' };
+    }
+
+    const effectiveRole = data.role || existingUser.role;
+    const sanitizedData: Partial<User> = { ...data };
+
+    if (data.accessKey !== undefined && effectiveRole !== 'administrador') {
+      const dniValidation = validateDniOrNie(data.accessKey);
+      if (!dniValidation.valid) {
+        return { success: false, error: dniValidation.error || 'DNI/NIE inválido.' };
+      }
+      const existingWithKey = allUsers.find(
+        (u) =>
+          u.id !== id &&
+          u.companyId === existingUser.companyId &&
+          u.accessKey.trim().toUpperCase().replace(/[\s-]/g, '') === dniValidation.formatted
+      );
+      if (existingWithKey) {
+        return {
+          success: false,
+          error: `El DNI/NIE "${dniValidation.formatted}" ya está asignado a "${existingWithKey.name}".`,
+        };
+      }
+      sanitizedData.accessKey = dniValidation.formatted;
+    }
+
+    setAllUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...sanitizedData } : u)));
+    fsUpdate('users', id, sanitizedData);
     return { success: true };
   };
 

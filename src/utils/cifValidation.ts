@@ -67,3 +67,45 @@ export const validateCifOrNif = (value: string): CifValidationResult => {
     formatted: cleaned,
   };
 };
+
+/**
+ * Validación de DNI / NIE para clave de acceso de usuarios (operarios, administrativos, solo lectura):
+ * - DNI: 8 números y 1 letra final (ej. 12345678Z)
+ * - NIE: X, Y o Z + 7 números y 1 letra final (ej. X1234567L)
+ */
+export const validateDniOrNie = (value: string): CifValidationResult => {
+  const cleaned = (value || '').trim().toUpperCase().replace(/[\s-]/g, '');
+
+  if (!cleaned) {
+    return {
+      valid: false,
+      error: 'El DNI/NIE del usuario es obligatorio.',
+      formatted: '',
+    };
+  }
+
+  if (cleaned.length !== 9) {
+    return {
+      valid: false,
+      error: `El DNI/NIE debe tener 9 caracteres (8 números y la letra, has introducido ${cleaned.length}).`,
+      formatted: cleaned,
+    };
+  }
+
+  const dniRegex = /^[0-9]{8}[A-Z]$/;
+  const nieRegex = /^[XYZ][0-9]{7}[A-Z]$/;
+
+  if (dniRegex.test(cleaned) || nieRegex.test(cleaned)) {
+    return {
+      valid: true,
+      formatted: cleaned,
+    };
+  }
+
+  return {
+    valid: false,
+    error:
+      'Formato de DNI/NIE incorrecto. Debes introducir los 8 números y la letra (ej. 12345678Z) o formato NIE (ej. X1234567L).',
+    formatted: cleaned,
+  };
+};

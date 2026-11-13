@@ -239,16 +239,17 @@ export const LoginView: React.FC = () => {
 
                   <div>
                     <label className="block text-xs font-bold text-graphite-700 uppercase tracking-wider mb-1.5">
-                      Clave de Acceso Adjudicada *
+                      Clave de Acceso (DNI / NIE) *
                     </label>
                     <div className="relative">
                       <KeyRound className="w-4 h-4 text-graphite-400 absolute left-3.5 top-3" />
                       <input
                         type="password"
                         required
+                        maxLength={9}
                         value={userAccessKey}
-                        onChange={(e) => setUserAccessKey(e.target.value)}
-                        placeholder="Introduce tu clave de usuario"
+                        onChange={(e) => setUserAccessKey(e.target.value.toUpperCase())}
+                        placeholder="Introduce tu DNI/NIE (ej. 12345678Z)"
                         className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-graphite-300 text-sm focus:ring-2 focus:ring-oterio-500 focus:border-oterio-500 bg-graphite-50/50"
                       />
                     </div>
