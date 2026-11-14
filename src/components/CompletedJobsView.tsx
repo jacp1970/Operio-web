@@ -40,6 +40,7 @@ export const CompletedJobsView: React.FC<CompletedJobsViewProps> = ({
     getUser,
     toggleWorkOrderInvoiced,
     deleteWorkOrderPermanently,
+    resolveJobPdfDataUrl,
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -50,6 +51,7 @@ export const CompletedJobsView: React.FC<CompletedJobsViewProps> = ({
   } | null>(null);
   const [deleteTargetJob, setDeleteTargetJob] = useState<WorkOrder | null>(null);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+  const [resolvingPdfJobId, setResolvingPdfJobId] = useState<string | null>(null);
 
   const completedJobs = useMemo(() => {
     return workOrders.filter((wo) => Boolean(getStatus(wo.statusId)?.isCompleted));
@@ -140,6 +142,30 @@ export const CompletedJobsView: React.FC<CompletedJobsViewProps> = ({
         type: 'error',
         text: res.error || 'Error al eliminar definitivamente la orden de trabajo.',
       });
+    }
+  };
+
+  const handleOpenJobPdf = async (job: WorkOrder) => {
+    if (!job.pdfAttachment) return;
+    if (job.pdfAttachment.dataUrl) {
+      onOpenPdfViewer({ name: job.pdfAttachment.name, dataUrl: job.pdfAttachment.dataUrl });
+      return;
+    }
+
+    setResolvingPdfJobId(job.id);
+    setFeedbackBanner(null);
+    try {
+      const resolvedUrl = await resolveJobPdfDataUrl(job.id, job.pdfAttachment);
+      if (resolvedUrl) {
+        onOpenPdfViewer({ name: job.pdfAttachment.name, dataUrl: resolvedUrl });
+      } else {
+        setFeedbackBanner({
+          type: 'error',
+          text: `El PDF de la orden ${job.ot} se adjuntó antes de la sincronización en la nube y solo está disponible en el dispositivo original.`,
+        });
+      }
+    } finally {
+      setResolvingPdfJobId(null);
     }
   };
 
@@ -340,14 +366,19 @@ export const CompletedJobsView: React.FC<CompletedJobsViewProps> = ({
                             <CheckCircle2 className="w-2.5 h-2.5" />
                             {status?.name || 'Finalizado'}
                           </span>
-                          {job.pdfAttachment?.dataUrl && (
+                          {job.pdfAttachment && (
                             <button
                               type="button"
-                              onClick={() => onOpenPdfViewer(job.pdfAttachment!)}
-                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-oterio-600 hover:text-oterio-800 cursor-pointer"
+                              disabled={resolvingPdfJobId === job.id}
+                              onClick={() => void handleOpenJobPdf(job)}
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-oterio-600 hover:text-oterio-800 cursor-pointer disabled:opacity-50"
                               title="Ver PDF adjunto"
                             >
-                              <FileText className="w-3 h-3" />
+                              {resolvingPdfJobId === job.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <FileText className="w-3 h-3" />
+                              )}
                               PDF
                             </button>
                           )}

@@ -52,8 +52,10 @@ export interface WorkNote {
 export interface PdfAttachment {
   name: string;
   size: number;
-  dataUrl: string; // Base64 data URL o link
+  dataUrl: string; // Base64 data URL o vacío si está almacenado por fragmentos en la nube
   uploadedAt: string;
+  chunkCount?: number; // Número de fragmentos en Firestore (pdfChunks) para PDFs grandes
+  storageKey?: string; // Clave única para recuperar los fragmentos desde Firestore
 }
 
 export type WorkOrderActionType =

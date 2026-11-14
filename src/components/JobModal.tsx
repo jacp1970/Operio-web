@@ -7,6 +7,7 @@ import {
   computeLiveTimerSeconds,
 } from '../utils/timeUtils';
 import { findPendingStatus } from '../utils/statusUtils';
+import { downloadPdfFromDataUrl } from '../utils/pdfUtils';
 import {
   X,
   FileText,
@@ -55,6 +56,7 @@ export const JobModal: React.FC<JobModalProps> = ({
     updateWorkOrder,
     deleteWorkOrderPermanently,
     deleteJobPdf,
+    resolveJobPdfDataUrl,
     getJobParticipants,
     getDepartmentName,
     getStatus,
@@ -89,6 +91,7 @@ export const JobModal: React.FC<JobModalProps> = ({
   // PDF Attachment and Gemini multimodal extraction state
   const [attachedPdf, setAttachedPdf] = useState<PdfAttachment | null>(null);
   const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
+  const [isResolvingPdf, setIsResolvingPdf] = useState(false);
   const [pdfSuccessNotice, setPdfSuccessNotice] = useState<string | null>(null);
   const [pdfErrorNotice, setPdfErrorNotice] = useState<string | null>(null);
   const [hasAnalyzedPdf, setHasAnalyzedPdf] = useState(false);
@@ -111,6 +114,7 @@ export const JobModal: React.FC<JobModalProps> = ({
     setReassignedPendingNotice(false);
     setHasManuallyEditedStatus(false);
     setIsAnalyzingPdf(false);
+    setIsResolvingPdf(false);
     setPdfSuccessNotice(null);
     setPdfErrorNotice(null);
     setHasAnalyzedPdf(false);
@@ -162,6 +166,27 @@ export const JobModal: React.FC<JobModalProps> = ({
       setStatusId(statuses[0].id);
     }
   }, [isOpen, job, departments, statuses, departmentId, statusId]);
+
+  // Background pre-resolution when opening an existing job whose large PDF is stored in Firestore chunks
+  useEffect(() => {
+    if (!isOpen || !job?.pdfAttachment || job.pdfAttachment.dataUrl) return;
+    if (!job.pdfAttachment.chunkCount && !job.pdfAttachment.storageKey) return;
+
+    let cancelled = false;
+    const attachmentSnapshot = job.pdfAttachment;
+    void resolveJobPdfDataUrl(job.id, attachmentSnapshot).then((resolved) => {
+      if (cancelled || !resolved) return;
+      setAttachedPdf((prev) =>
+        prev && !prev.dataUrl && prev.uploadedAt === attachmentSnapshot.uploadedAt
+          ? { ...prev, dataUrl: resolved }
+          : prev
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, job?.id]);
 
   // Live stopwatch tick effect: updates liveElapsedSeconds every second when isRunning is true
   useEffect(() => {
@@ -380,15 +405,43 @@ export const JobModal: React.FC<JobModalProps> = ({
     e.target.value = '';
   };
 
-  const handleDownloadPdf = () => {
+  const ensureAttachmentDataUrl = async (attachment: PdfAttachment): Promise<string | null> => {
+    if (attachment.dataUrl) return attachment.dataUrl;
+    if (!job) return null;
+
+    setIsResolvingPdf(true);
+    setPdfErrorNotice(null);
+    try {
+      const resolvedUrl = await resolveJobPdfDataUrl(job.id, attachment);
+      if (!resolvedUrl) {
+        setPdfErrorNotice(
+          'Este PDF fue adjuntado antes de activar la sincronización en la nube y solo existe en el navegador original. Pide al administrador que vuelva a subirlo para abrirlo desde cualquier dispositivo.'
+        );
+        return null;
+      }
+      setAttachedPdf({ ...attachment, dataUrl: resolvedUrl });
+      return resolvedUrl;
+    } finally {
+      setIsResolvingPdf(false);
+    }
+  };
+
+  const handleViewPdf = async () => {
+    const currentAttachment = attachedPdf || job?.pdfAttachment;
+    if (!currentAttachment || !onOpenPdfViewer) return;
+    const resolvedUrl = await ensureAttachmentDataUrl(currentAttachment);
+    if (resolvedUrl) {
+      onOpenPdfViewer({ name: currentAttachment.name, dataUrl: resolvedUrl });
+    }
+  };
+
+  const handleDownloadPdf = async () => {
     const currentAttachment = attachedPdf || job?.pdfAttachment;
     if (!currentAttachment) return;
-    const link = document.createElement('a');
-    link.href = currentAttachment.dataUrl;
-    link.download = currentAttachment.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const resolvedUrl = await ensureAttachmentDataUrl(currentAttachment);
+    if (resolvedUrl) {
+      downloadPdfFromDataUrl(resolvedUrl, currentAttachment.name);
+    }
   };
 
   const handleRemoveAttachment = () => {
@@ -717,28 +770,36 @@ export const JobModal: React.FC<JobModalProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-end sm:self-center">
+                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
                   {onOpenPdfViewer && (
                     <button
                       type="button"
-                      disabled={!currentAttachment.dataUrl}
-                      onClick={() => onOpenPdfViewer(currentAttachment)}
-                      title={!currentAttachment.dataUrl ? 'Archivo grande guardado en sesión local del equipo original' : 'Ver PDF'}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-graphite-100 text-graphite-700 hover:bg-graphite-200 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      disabled={isResolvingPdf}
+                      onClick={() => void handleViewPdf()}
+                      title="Ver PDF"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 sm:py-1.5 text-xs font-semibold rounded-lg bg-graphite-100 text-graphite-700 hover:bg-graphite-200 transition-colors cursor-pointer touch-manipulation disabled:opacity-60"
                     >
-                      <Eye className="w-3.5 h-3.5" />
+                      {isResolvingPdf ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Eye className="w-3.5 h-3.5" />
+                      )}
                       <span>Ver</span>
                     </button>
                   )}
 
                   <button
                     type="button"
-                    disabled={!currentAttachment.dataUrl}
-                    onClick={handleDownloadPdf}
-                    title={!currentAttachment.dataUrl ? 'Archivo grande guardado en sesión local del equipo original' : 'Descargar PDF'}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-oterio-50 text-oterio-700 hover:bg-oterio-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    disabled={isResolvingPdf}
+                    onClick={() => void handleDownloadPdf()}
+                    title="Descargar PDF"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 sm:py-1.5 text-xs font-semibold rounded-lg bg-oterio-50 text-oterio-700 hover:bg-oterio-100 transition-colors cursor-pointer touch-manipulation disabled:opacity-60"
                   >
-                    <Download className="w-3.5 h-3.5" />
+                    {isResolvingPdf ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5" />
+                    )}
                     <span>Descargar</span>
                   </button>
 

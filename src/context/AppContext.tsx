@@ -25,6 +25,10 @@ import { db, auth } from '../firebase';
 import {
   collection,
   doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -85,6 +89,7 @@ interface AppContextType {
   updateJobNotes: (workOrderId: string, notes: string) => void;
   uploadJobPdf: (workOrderId: string, file: File) => Promise<boolean>;
   deleteJobPdf: (workOrderId: string) => void;
+  resolveJobPdfDataUrl: (workOrderId: string, attachment: PdfAttachment) => Promise<string | null>;
 
   // Departments methods (Admin only)
   createDepartment: (name: string) => { success: boolean; error?: string };
@@ -148,9 +153,10 @@ function sanitizeForFirestore<T>(data: T): Record<string, unknown> {
   return JSON.parse(json);
 }
 
-// Firestore documents have a strict 1 MiB limit; Base64 PDFs larger than ~700 KB are cached in memory
-// and persisted with metadata in Firestore/localStorage so the work order always saves reliably.
+// Firestore documents have a strict 1 MiB limit; Base64 PDFs larger than ~700 KB are split into
+// 500 KB chunks in the `pdfChunks` collection so any device (desktop or mobile) can open and download them.
 const MAX_INLINE_PDF_LENGTH = 700_000;
+const PDF_CHUNK_SIZE = 500_000;
 
 function safeLocalStorageSet(key: string, value: string) {
   try {
@@ -253,8 +259,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentUserRef.current = currentUser;
   }, [currentUser]);
 
-  // In-memory cache for large PDF dataUrls (>700KB Base64) so they remain viewable during session
-  // without exceeding Firestore 1MB document size or localStorage quota limits
+  // In-memory cache for large PDF dataUrls (>700KB Base64) so they remain immediately viewable
+  // without exceeding localStorage quota limits, while also syncing chunks to Firestore `pdfChunks`.
   const largePdfCacheRef = useRef<Record<string, string>>({});
 
   const sanitizePdfForStorage = (
@@ -269,9 +275,191 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         size: pdf.size,
         dataUrl: '',
         uploadedAt: pdf.uploadedAt,
+        ...(pdf.chunkCount ? { chunkCount: pdf.chunkCount } : {}),
+        ...(pdf.storageKey ? { storageKey: pdf.storageKey } : {}),
       };
     }
     return pdf;
+  };
+
+  const deletePdfChunksForWorkOrder = async (workOrderId: string) => {
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'pdfChunks'), where('workOrderId', '==', workOrderId))
+      );
+      if (!snap.empty) {
+        await Promise.allSettled(snap.docs.map((d) => deleteDoc(d.ref)));
+      }
+    } catch (err) {
+      console.warn(`Error deleting pdfChunks for workOrder ${workOrderId}:`, err);
+    }
+  };
+
+  const deletePdfChunksForCompany = async (compId: string) => {
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'pdfChunks'), where('companyId', '==', compId))
+      );
+      if (!snap.empty) {
+        await Promise.allSettled(snap.docs.map((d) => deleteDoc(d.ref)));
+      }
+    } catch (err) {
+      console.warn(`Error deleting pdfChunks for company ${compId}:`, err);
+    }
+  };
+
+  const preparePdfForFirestore = (
+    workOrderId: string,
+    compId: string,
+    pdf?: PdfAttachment,
+    existingPdf?: PdfAttachment
+  ): {
+    storedAttachment?: PdfAttachment;
+    uploadPromise?: Promise<void>;
+  } => {
+    if (!pdf) {
+      return { storedAttachment: undefined };
+    }
+
+    // Already chunked metadata without local dataUrl
+    if (!pdf.dataUrl) {
+      return { storedAttachment: pdf };
+    }
+
+    if (pdf.dataUrl.length <= MAX_INLINE_PDF_LENGTH) {
+      return { storedAttachment: pdf };
+    }
+
+    // Cache full dataUrl in session RAM for immediate viewing
+    largePdfCacheRef.current[`${workOrderId}::${pdf.uploadedAt}`] = pdf.dataUrl;
+
+    // If this exact uploaded file already has chunks stored in Firestore, avoid redundant re-upload
+    if (
+      existingPdf &&
+      existingPdf.storageKey &&
+      existingPdf.chunkCount &&
+      existingPdf.uploadedAt === pdf.uploadedAt &&
+      existingPdf.name === pdf.name &&
+      existingPdf.size === pdf.size
+    ) {
+      return {
+        storedAttachment: {
+          name: pdf.name,
+          size: pdf.size,
+          dataUrl: '',
+          uploadedAt: pdf.uploadedAt,
+          chunkCount: existingPdf.chunkCount,
+          storageKey: existingPdf.storageKey,
+        },
+      };
+    }
+
+    const storageKey = pdf.storageKey || `${workOrderId}_${Date.now()}`;
+    const chunks: string[] = [];
+    for (let i = 0; i < pdf.dataUrl.length; i += PDF_CHUNK_SIZE) {
+      chunks.push(pdf.dataUrl.slice(i, i + PDF_CHUNK_SIZE));
+    }
+
+    const storedAttachment: PdfAttachment = {
+      name: pdf.name,
+      size: pdf.size,
+      dataUrl: '',
+      uploadedAt: pdf.uploadedAt,
+      chunkCount: chunks.length,
+      storageKey,
+    };
+
+    const uploadPromise = Promise.all(
+      chunks.map((chunkData, idx) => {
+        const chunkId = `${storageKey}_c${idx}`;
+        return fsSet('pdfChunks', chunkId, {
+          id: chunkId,
+          companyId: compId,
+          workOrderId,
+          storageKey,
+          chunkIndex: idx,
+          totalChunks: chunks.length,
+          data: chunkData,
+        });
+      })
+    ).then(() => undefined);
+
+    return { storedAttachment, uploadPromise };
+  };
+
+  const resolveJobPdfDataUrl = async (
+    workOrderId: string,
+    attachment: PdfAttachment
+  ): Promise<string | null> => {
+    if (attachment.dataUrl) {
+      return attachment.dataUrl;
+    }
+
+    const cacheKey = `${workOrderId}::${attachment.uploadedAt}`;
+    const cached = largePdfCacheRef.current[cacheKey];
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      let chunkRecords: Array<{ chunkIndex: number; data: string }> = [];
+
+      if (attachment.storageKey && attachment.chunkCount && attachment.chunkCount > 0) {
+        const docSnaps = await Promise.all(
+          Array.from({ length: attachment.chunkCount }, (_, idx) =>
+            getDoc(doc(db, 'pdfChunks', `${attachment.storageKey}_c${idx}`))
+          )
+        );
+        if (docSnaps.every((s) => s.exists())) {
+          chunkRecords = docSnaps.map((s) => {
+            const d = s.data() as { chunkIndex: number; data: string };
+            return { chunkIndex: d.chunkIndex, data: d.data };
+          });
+        }
+      }
+
+      if (chunkRecords.length === 0) {
+        const snap = await getDocs(
+          query(collection(db, 'pdfChunks'), where('workOrderId', '==', workOrderId))
+        );
+        if (!snap.empty) {
+          snap.forEach((docSnap) => {
+            const d = docSnap.data() as {
+              storageKey?: string;
+              chunkIndex: number;
+              data: string;
+            };
+            if (!attachment.storageKey || !d.storageKey || d.storageKey === attachment.storageKey) {
+              chunkRecords.push({ chunkIndex: d.chunkIndex, data: d.data });
+            }
+          });
+        }
+      }
+
+      if (chunkRecords.length === 0) {
+        return null;
+      }
+
+      chunkRecords.sort((a, b) => a.chunkIndex - b.chunkIndex);
+      const assembled = chunkRecords.map((c) => c.data).join('');
+      if (!assembled) {
+        return null;
+      }
+
+      largePdfCacheRef.current[cacheKey] = assembled;
+      setAllWorkOrders((prev) =>
+        prev.map((w) =>
+          w.id === workOrderId && w.pdfAttachment
+            ? { ...w, pdfAttachment: { ...w.pdfAttachment, dataUrl: assembled } }
+            : w
+        )
+      );
+
+      return assembled;
+    } catch (err) {
+      console.warn(`Error resolving pdfChunks for workOrder ${workOrderId}:`, err);
+      return null;
+    }
   };
 
   // ==========================================
@@ -898,6 +1086,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Delete in Firestore
     const deletePromises: Promise<void>[] = [];
     deletePromises.push(fsDelete('companies', cId));
+    deletePromises.push(deletePdfChunksForCompany(cId));
     jobsToDelete.forEach((j) => deletePromises.push(fsDelete('workOrders', j.id)));
     deptsToDelete.forEach((d) => deletePromises.push(fsDelete('departments', d.id)));
     statusesToDelete.forEach((s) => deletePromises.push(fsDelete('statuses', s.id)));
@@ -948,6 +1137,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const notifsToDelete = allNotifications.filter((n) => n.companyId === cId);
 
     const deletePromises: Promise<void>[] = [];
+    deletePromises.push(deletePdfChunksForCompany(cId));
     jobsToDelete.forEach((j) => deletePromises.push(fsDelete('workOrders', j.id)));
     notifsToDelete.forEach((n) => deletePromises.push(fsDelete('notifications', n.id)));
 
@@ -1170,15 +1360,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timer: data.timer,
     };
 
+    const { storedAttachment, uploadPromise } = preparePdfForFirestore(
+      newId,
+      companyId,
+      newOrder.pdfAttachment
+    );
+
+    const newOrderWithMeta: WorkOrder =
+      storedAttachment && storedAttachment.chunkCount
+        ? {
+            ...newOrder,
+            pdfAttachment: {
+              ...newOrder.pdfAttachment!,
+              chunkCount: storedAttachment.chunkCount,
+              storageKey: storedAttachment.storageKey,
+            },
+          }
+        : newOrder;
+
     const firestoreOrder: WorkOrder = {
-      ...newOrder,
-      pdfAttachment: sanitizePdfForStorage(newId, newOrder.pdfAttachment),
+      ...newOrderWithMeta,
+      pdfAttachment: storedAttachment,
     };
 
-    setAllWorkOrders((prev) => [newOrder, ...prev]);
+    setAllWorkOrders((prev) => [newOrderWithMeta, ...prev]);
 
-    // Sync new Work Order to Firestore (always <= 1MB)
-    fsSet('workOrders', newOrder.id, firestoreOrder);
+    // Upload any PDF chunks before persisting workOrder metadata so remote devices find all chunks immediately
+    if (uploadPromise) {
+      void uploadPromise.then(() => fsSet('workOrders', newOrder.id, firestoreOrder));
+    } else {
+      fsSet('workOrders', newOrder.id, firestoreOrder);
+    }
 
     if (newOrder.assignedOperatorId) {
       sendNotification({
@@ -1458,19 +1670,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    let pdfUploadPromise: Promise<void> | undefined;
+    const firestoreUpdates: Partial<WorkOrder> = {
+      ...finalUpdates,
+    };
+
+    if (finalUpdates.pdfAttachment !== undefined) {
+      const prepared = preparePdfForFirestore(
+        id,
+        existing.companyId,
+        finalUpdates.pdfAttachment,
+        existing.pdfAttachment
+      );
+      firestoreUpdates.pdfAttachment = prepared.storedAttachment;
+      pdfUploadPromise = prepared.uploadPromise;
+
+      if (prepared.storedAttachment?.chunkCount && finalUpdates.pdfAttachment) {
+        finalUpdates.pdfAttachment = {
+          ...finalUpdates.pdfAttachment,
+          chunkCount: prepared.storedAttachment.chunkCount,
+          storageKey: prepared.storedAttachment.storageKey,
+        };
+      }
+
+      // If replacing an older chunked PDF with a new one, clean up old chunks
+      if (
+        existing.pdfAttachment?.storageKey &&
+        existing.pdfAttachment.storageKey !== prepared.storedAttachment?.storageKey
+      ) {
+        void deletePdfChunksForWorkOrder(id);
+      }
+    }
+
     setAllWorkOrders((prev) =>
       prev.map((w) => (w.id === id ? { ...w, ...finalUpdates } : w))
     );
 
-    const firestoreUpdates: Partial<WorkOrder> = {
-      ...finalUpdates,
-      ...(finalUpdates.pdfAttachment !== undefined
-        ? { pdfAttachment: sanitizePdfForStorage(id, finalUpdates.pdfAttachment) }
-        : {}),
-    };
-
     // Sync updates to Firestore
-    fsUpdate('workOrders', id, firestoreUpdates);
+    if (pdfUploadPromise) {
+      void pdfUploadPromise.then(() => fsUpdate('workOrders', id, firestoreUpdates));
+    } else {
+      fsUpdate('workOrders', id, firestoreUpdates);
+    }
 
     return { success: true };
   };
@@ -1517,6 +1758,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     setAllWorkOrders((prev) => prev.filter((w) => w.id !== id));
     fsDelete('workOrders', id);
+    void deletePdfChunksForWorkOrder(id);
     return { success: true };
   };
 
@@ -1532,6 +1774,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       await deleteDoc(doc(db, 'workOrders', id));
+      await deletePdfChunksForWorkOrder(id);
 
       // Clean up related notifications in Firestore as well
       const relatedNotifs = allNotifications.filter((n) => n.workOrderId === id);
@@ -1790,34 +2033,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const uploadJobPdf = async (workOrderId: string, file: File): Promise<boolean> => {
+    const targetOrder = allWorkOrders.find((w) => w.id === workOrderId);
+    const targetCompId = targetOrder?.companyId || companyId || '';
+
     return new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         const dataUrl = reader.result as string;
         const updatedAt = new Date().toISOString();
-        const pdfAttachment = {
+        const rawAttachment: PdfAttachment = {
           name: file.name,
           size: file.size,
           dataUrl,
           uploadedAt: updatedAt,
         };
 
+        if (targetOrder?.pdfAttachment?.storageKey) {
+          await deletePdfChunksForWorkOrder(workOrderId);
+        }
+
+        const { storedAttachment, uploadPromise } = preparePdfForFirestore(
+          workOrderId,
+          targetCompId,
+          rawAttachment
+        );
+
+        const localAttachment: PdfAttachment = storedAttachment?.chunkCount
+          ? {
+              ...rawAttachment,
+              chunkCount: storedAttachment.chunkCount,
+              storageKey: storedAttachment.storageKey,
+            }
+          : rawAttachment;
+
         setAllWorkOrders((prev) =>
           prev.map((w) =>
-            w.id === workOrderId ? { ...w, pdfAttachment, updatedAt } : w
+            w.id === workOrderId ? { ...w, pdfAttachment: localAttachment, updatedAt } : w
           )
         );
 
-        // If file is smaller than ~600KB, sync complete attachment to Firestore
-        if (dataUrl.length < 800000) {
-          fsUpdate('workOrders', workOrderId, { pdfAttachment, updatedAt });
-        } else {
-          // Sync metadata so other nodes know file exists without exceeding 1MB doc limit
-          fsUpdate('workOrders', workOrderId, {
-            pdfAttachment: { name: file.name, size: file.size, dataUrl: '', uploadedAt: updatedAt },
-            updatedAt,
-          });
+        if (uploadPromise) {
+          await uploadPromise;
         }
+        await fsUpdate('workOrders', workOrderId, {
+          pdfAttachment: storedAttachment,
+          updatedAt,
+        });
         resolve(true);
       };
       reader.onerror = () => resolve(false);
@@ -1836,6 +2097,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
     fsUpdate('workOrders', workOrderId, { pdfAttachment: null, updatedAt });
+    void deletePdfChunksForWorkOrder(workOrderId);
   };
 
   // ==========================================
@@ -2174,6 +2436,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateJobNotes,
         uploadJobPdf,
         deleteJobPdf,
+        resolveJobPdfDataUrl,
         createDepartment,
         updateDepartment,
         deleteDepartment,

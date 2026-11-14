@@ -95,6 +95,21 @@
         "createdAt": { "type": "string" }
       },
       "required": ["id", "companyId", "userId", "title", "message", "type", "read", "createdAt"]
+    },
+    "PdfChunk": {
+      "title": "PdfChunk",
+      "description": "Fragmento de archivo PDF adjunto a una orden de trabajo para sincronización multi-dispositivo",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyId": { "type": "string" },
+        "workOrderId": { "type": "string" },
+        "storageKey": { "type": "string" },
+        "chunkIndex": { "type": "number" },
+        "totalChunks": { "type": "number" },
+        "data": { "type": "string" }
+      },
+      "required": ["id", "companyId", "workOrderId", "storageKey", "chunkIndex", "totalChunks", "data"]
     }
   },
   "firestore": {
@@ -121,6 +136,10 @@
     "/notifications/{notificationId}": {
       "schema": "#/entities/AppNotification",
       "description": "Notificaciones del sistema"
+    },
+    "/pdfChunks/{chunkId}": {
+      "schema": "#/entities/PdfChunk",
+      "description": "Fragmentos de PDFs adjuntos para sincronización entre dispositivos"
     }
   }
 }
