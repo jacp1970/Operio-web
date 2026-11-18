@@ -303,13 +303,33 @@ app.post('/api/extract-work-order-photo', async (req, res) => {
 app.use(express.static(path.resolve(__dirname, 'public')));
 app.use('/assets', express.static(path.resolve(__dirname, 'public', 'assets')));
 
-// Direct fallbacks for logo and icon requests from any relative subpath
+// Direct fallbacks for logo and shortcut icon requests from any relative subpath
 app.get(['*/OTERIOlogo_549a0e32.jpg', '*/assets/aistudio/OTERIOlogo_549a0e32.jpg'], (_req, res) => {
   res.sendFile(path.resolve(__dirname, 'public', 'assets', 'aistudio', 'OTERIOlogo_549a0e32.jpg'));
 });
 
+app.get(['*/IMG_20261118_203457_9dc5212b.jpg', '*/assets/aistudio/IMG_20261118_203457_9dc5212b.jpg'], (_req, res) => {
+  res.sendFile(path.resolve(__dirname, 'public', 'assets', 'aistudio', 'IMG_20261118_203457_9dc5212b.jpg'));
+});
+
 app.get(['*/operio_icon.png', '*/assets/aistudio/operio_icon.png'], (_req, res) => {
-  res.sendFile(path.resolve(__dirname, 'public', 'assets', 'aistudio', 'operio_icon.png'));
+  res.sendFile(path.resolve(__dirname, 'public', 'operio_icon.png'));
+});
+
+app.get('*/apple-touch-icon.png', (_req, res) => {
+  res.sendFile(path.resolve(__dirname, 'public', 'apple-touch-icon.png'));
+});
+
+app.get('*/pwa-192x192.png', (_req, res) => {
+  res.sendFile(path.resolve(__dirname, 'public', 'pwa-192x192.png'));
+});
+
+app.get('*/pwa-512x512.png', (_req, res) => {
+  res.sendFile(path.resolve(__dirname, 'public', 'pwa-512x512.png'));
+});
+
+app.get('*/pwa-maskable-512x512.png', (_req, res) => {
+  res.sendFile(path.resolve(__dirname, 'public', 'pwa-maskable-512x512.png'));
 });
 
 // Transparent internal rewrite for /main.tsx to /src/main.tsx (no 302 redirect)

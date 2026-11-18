@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Logo } from './Logo';
+import { PWAInstallButton } from './PWAInstallButton';
 import {
   Menu,
   Bell,
@@ -137,8 +138,9 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right: Quick Role Switcher & Notifications */}
+        {/* Right: Shortcut Install, Quick Role Switcher & Notifications */}
         <div className="flex items-center gap-2 sm:gap-3">
+          <PWAInstallButton />
 
           {/* Notifications bell button with dropdown */}
           {currentUser.role !== 'solo_lectura' && (

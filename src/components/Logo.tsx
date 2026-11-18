@@ -11,6 +11,7 @@ export const Logo: React.FC<LogoProps> = ({
   size = 'md',
   showSubtitle = false,
   className = '',
+  variant = 'full',
 }) => {
   const sizeConfig = {
     sm: {
@@ -35,11 +36,16 @@ export const Logo: React.FC<LogoProps> = ({
     },
   }[size];
 
+  const imgSrc =
+    variant === 'icon'
+      ? '/assets/aistudio/IMG_20261118_203457_9dc5212b.jpg'
+      : '/assets/aistudio/OTERIOlogo_549a0e32.jpg';
+
   return (
     <div className={`inline-flex flex-col select-none ${className}`}>
       <div className={`flex items-center ${sizeConfig.gap}`}>
         <img
-          src="/assets/aistudio/OTERIOlogo_549a0e32.jpg"
+          src={imgSrc}
           alt="Oterio - Gestión del Trabajo"
           className={`${sizeConfig.imgHeight} w-auto object-contain max-w-full mix-blend-multiply transition-transform duration-200 hover:scale-[1.02]`}
           loading="eager"
