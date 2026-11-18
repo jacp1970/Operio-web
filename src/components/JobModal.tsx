@@ -7,11 +7,12 @@ import {
   computeLiveTimerSeconds,
 } from '../utils/timeUtils';
 import { findPendingStatus } from '../utils/statusUtils';
-import { downloadPdfFromDataUrl } from '../utils/pdfUtils';
+import { downloadPdfFromDataUrl, readPhotoAsEphemeralBase64 } from '../utils/pdfUtils';
 import {
   X,
   FileText,
   Upload,
+  Camera,
   Download,
   Trash2,
   AlertTriangle,
@@ -88,9 +89,10 @@ export const JobModal: React.FC<JobModalProps> = ({
   const [reassignedPendingNotice, setReassignedPendingNotice] = useState(false);
   const [hasManuallyEditedStatus, setHasManuallyEditedStatus] = useState(false);
 
-  // PDF Attachment and Gemini multimodal extraction state
+  // PDF Attachment and Gemini multimodal extraction state (PDF or ephemeral mobile photo)
   const [attachedPdf, setAttachedPdf] = useState<PdfAttachment | null>(null);
   const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
+  const [analyzingSource, setAnalyzingSource] = useState<'pdf' | 'photo' | null>(null);
   const [isResolvingPdf, setIsResolvingPdf] = useState(false);
   const [pdfSuccessNotice, setPdfSuccessNotice] = useState<string | null>(null);
   const [pdfErrorNotice, setPdfErrorNotice] = useState<string | null>(null);
@@ -103,6 +105,7 @@ export const JobModal: React.FC<JobModalProps> = ({
   const [showSessionsList, setShowSessionsList] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const modalBodyRef = useRef<HTMLDivElement | null>(null);
 
   // Initialize form state ONLY when opening the modal or switching the selected job
@@ -114,6 +117,7 @@ export const JobModal: React.FC<JobModalProps> = ({
     setReassignedPendingNotice(false);
     setHasManuallyEditedStatus(false);
     setIsAnalyzingPdf(false);
+    setAnalyzingSource(null);
     setIsResolvingPdf(false);
     setPdfSuccessNotice(null);
     setPdfErrorNotice(null);
@@ -289,8 +293,87 @@ export const JobModal: React.FC<JobModalProps> = ({
    * Multimodal PDF Extraction via server-side Gemini Flash API (/api/extract-work-order-pdf)
    * Populates ONLY the 5 specified form fields without touching any other field or auto-saving.
    */
+  const applyExtractedFieldsToForm = (
+    payload: Record<string, any>,
+    source: 'pdf' | 'photo'
+  ) => {
+    const extractedOt =
+      typeof payload.ot === 'string' && payload.ot.trim()
+        ? payload.ot.trim().toUpperCase()
+        : '';
+    const extractedClient =
+      typeof payload.client === 'string' && payload.client.trim()
+        ? payload.client.trim()
+        : '';
+    const extractedCreatedAt =
+      typeof payload.createdAt === 'string' && payload.createdAt.trim()
+        ? payload.createdAt.trim()
+        : '';
+    const extractedDeliveryDate =
+      typeof payload.deliveryDate === 'string' && payload.deliveryDate.trim()
+        ? payload.deliveryDate.trim()
+        : '';
+    const extractedNotes =
+      typeof payload.notes === 'string' && payload.notes.trim()
+        ? payload.notes.trim()
+        : '';
+    const extractedIsUrgent = payload.isUrgent === true;
+
+    setOt(extractedOt);
+    setClient(extractedClient);
+    setCreatedAt(extractedCreatedAt);
+    setDeliveryDate(extractedDeliveryDate);
+    setNotes(extractedNotes);
+    setIsUrgent(extractedIsUrgent);
+    setHasAnalyzedPdf(true);
+
+    const detectedCount = [
+      extractedOt,
+      extractedClient,
+      extractedCreatedAt,
+      extractedDeliveryDate,
+      extractedNotes,
+      extractedIsUrgent ? 'urgente' : '',
+    ].filter(Boolean).length;
+
+    const missingMainFields: string[] = [];
+    if (!extractedOt) missingMainFields.push('Nº OT');
+    if (!extractedClient) missingMainFields.push('Cliente');
+    if (!extractedCreatedAt) missingMainFields.push('Fecha de entrada');
+
+    if (detectedCount > 0) {
+      const missingWarning =
+        missingMainFields.length > 0
+          ? ` Faltan por detectar: ${missingMainFields.join(', ')}.`
+          : '';
+      const urgentNotice = extractedIsUrgent
+        ? ' Marcado como URGENTE según el parte.'
+        : '';
+      const ephemeralPhotoNote =
+        source === 'photo'
+          ? ' La fotografía ha sido descartada y no se almacena ni en la base de datos ni en el dispositivo.'
+          : '';
+      setPdfSuccessNotice(
+        `Datos extraídos con Gemini Flash para revisión.${urgentNotice}${missingWarning}${ephemeralPhotoNote} Comprueba la información antes de pulsar guardar.`
+      );
+    } else if (source === 'photo') {
+      setPdfSuccessNotice(
+        'Se analizó la fotografía (y se descartó sin almacenarla), pero no se detectaron datos claros del parte. Completa los campos manualmente antes de guardar.'
+      );
+    } else {
+      setPdfSuccessNotice(
+        'El PDF se ha adjuntado, pero no se encontraron datos de orden de trabajo. Completa los campos manualmente antes de guardar.'
+      );
+    }
+  };
+
+  /**
+   * Multimodal PDF Extraction via server-side Gemini Flash API (/api/extract-work-order-pdf)
+   * Populates ONLY the form fields without auto-saving.
+   */
   const extractDataFromPdfWithGemini = async (pdfDataUrl: string, fileName: string) => {
     setIsAnalyzingPdf(true);
+    setAnalyzingSource('pdf');
     setPdfSuccessNotice(null);
     setPdfErrorNotice(null);
     setErrorMessage('');
@@ -314,51 +397,7 @@ export const JobModal: React.FC<JobModalProps> = ({
         );
       }
 
-      const extractedOt = typeof payload.ot === 'string' && payload.ot.trim() ? payload.ot.trim().toUpperCase() : '';
-      const extractedClient = typeof payload.client === 'string' && payload.client.trim() ? payload.client.trim() : '';
-      const extractedCreatedAt = typeof payload.createdAt === 'string' && payload.createdAt.trim() ? payload.createdAt.trim() : '';
-      const extractedDeliveryDate =
-        typeof payload.deliveryDate === 'string' && payload.deliveryDate.trim() ? payload.deliveryDate.trim() : '';
-      const extractedNotes = typeof payload.notes === 'string' && payload.notes.trim() ? payload.notes.trim() : '';
-      const extractedIsUrgent = payload.isUrgent === true;
-
-      // Apply extracted fields (leave empty when null; mark urgent if detected in PDF)
-      setOt(extractedOt);
-      setClient(extractedClient);
-      setCreatedAt(extractedCreatedAt);
-      setDeliveryDate(extractedDeliveryDate);
-      setNotes(extractedNotes);
-      setIsUrgent(extractedIsUrgent);
-      setHasAnalyzedPdf(true);
-
-      const detectedCount = [
-        extractedOt,
-        extractedClient,
-        extractedCreatedAt,
-        extractedDeliveryDate,
-        extractedNotes,
-        extractedIsUrgent ? 'urgente' : '',
-      ].filter(Boolean).length;
-
-      const missingMainFields: string[] = [];
-      if (!extractedOt) missingMainFields.push('Nº OT');
-      if (!extractedClient) missingMainFields.push('Cliente');
-      if (!extractedCreatedAt) missingMainFields.push('Fecha de entrada');
-
-      if (detectedCount > 0) {
-        const missingWarning =
-          missingMainFields.length > 0
-            ? ` Faltan por detectar: ${missingMainFields.join(', ')}.`
-            : '';
-        const urgentNotice = extractedIsUrgent ? ' Marcado como URGENTE según el documento.' : '';
-        setPdfSuccessNotice(
-          `Datos extraídos con Gemini Flash para revisión.${urgentNotice}${missingWarning} Comprueba la información antes de pulsar guardar.`
-        );
-      } else {
-        setPdfSuccessNotice(
-          'El PDF se ha adjuntado, pero no se encontraron datos de orden de trabajo. Completa los campos manualmente antes de guardar.'
-        );
-      }
+      applyExtractedFieldsToForm(payload, 'pdf');
     } catch (err: any) {
       console.error('Error analyzing PDF with Gemini:', err);
       setPdfErrorNotice(
@@ -367,6 +406,66 @@ export const JobModal: React.FC<JobModalProps> = ({
       );
     } finally {
       setIsAnalyzingPdf(false);
+      setAnalyzingSource(null);
+    }
+  };
+
+  /**
+   * Ephemeral Mobile Photo Extraction via server-side Gemini Flash API (/api/extract-work-order-photo)
+   * Extracts ONLY the work order fields and immediately discards the photo in memory without storing it
+   * in Firestore or localStorage.
+   */
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset input immediately so the file reference is not retained in the DOM input
+    e.target.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMessage('Por favor, toma o selecciona una fotografía válida del parte de trabajo.');
+      return;
+    }
+
+    setIsAnalyzingPdf(true);
+    setAnalyzingSource('photo');
+    setPdfSuccessNotice(null);
+    setPdfErrorNotice(null);
+    setErrorMessage('');
+
+    try {
+      const ephemeralPhoto = await readPhotoAsEphemeralBase64(file);
+
+      const response = await fetch('/api/extract-work-order-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: ephemeralPhoto.base64,
+          mimeType: ephemeralPhoto.mimeType,
+        }),
+      });
+
+      // Overwrite transient string reference immediately after sending
+      ephemeralPhoto.base64 = '';
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ||
+            'No se pudo analizar la fotografía del parte con Gemini. Puedes completar los campos manualmente.'
+        );
+      }
+
+      applyExtractedFieldsToForm(payload, 'photo');
+    } catch (err: any) {
+      console.error('Error analyzing photo with Gemini:', err);
+      setPdfErrorNotice(
+        err?.message ||
+          'Ha ocurrido un error al analizar la fotografía con IA. Puedes completar los datos manualmente.'
+      );
+    } finally {
+      setIsAnalyzingPdf(false);
+      setAnalyzingSource(null);
     }
   };
 
@@ -644,7 +743,7 @@ export const JobModal: React.FC<JobModalProps> = ({
               </h2>
               {isCreating && (
                 <p className="text-[11px] text-graphite-500 hidden sm:block">
-                  Sube el PDF para autorellenar datos o introduce la información manualmente
+                  Sube el PDF, haz una foto al parte con el móvil o introduce los datos manualmente
                 </p>
               )}
             </div>
@@ -667,16 +766,20 @@ export const JobModal: React.FC<JobModalProps> = ({
             </div>
           )}
 
-          {/* Multimodal Gemini PDF Auto-fill Status */}
+          {/* Multimodal Gemini PDF / Photo Auto-fill Status */}
           {isAnalyzingPdf && (
             <div className="p-4 rounded-2xl bg-oterio-50/90 border border-oterio-200/90 flex items-center gap-3 animate-pulse">
               <Loader2 className="w-5 h-5 text-oterio-600 animate-spin shrink-0" />
               <div>
                 <p className="text-xs font-bold text-oterio-950">
-                  Analizando archivo PDF con Gemini Flash...
+                  {analyzingSource === 'photo'
+                    ? 'Analizando fotografía del parte con Gemini Flash...'
+                    : 'Analizando archivo PDF con Gemini Flash...'}
                 </p>
                 <p className="text-[11px] text-oterio-700">
-                  Extrayendo Nº OT, cliente, fechas, urgencia y descripción del trabajo para tu revisión antes de guardar.
+                  {analyzingSource === 'photo'
+                    ? 'Extrayendo únicamente los datos del parte (la fotografía no se almacena ni local ni en la nube).'
+                    : 'Extrayendo Nº OT, cliente, fechas, urgencia y descripción del trabajo para tu revisión antes de guardar.'}
                 </p>
               </div>
             </div>
@@ -818,11 +921,11 @@ export const JobModal: React.FC<JobModalProps> = ({
             ) : (
               <div className="space-y-3">
                 <p className="text-xs text-graphite-500">
-                  Adjunta el archivo en formato PDF. Al subirlo, la aplicación identificará los datos del trabajo y autorellenará la orden automáticamente. Si no dispones de PDF, puedes rellenar todos los campos manualmente.
+                  Adjunta el archivo en formato PDF o haz una foto al parte con el móvil para que la IA identifique y autorellene los datos automáticamente. La fotografía solo se utiliza para extraer los datos y no se almacena ni en la base de datos ni de forma local.
                 </p>
 
                 {(isAdmin || (isCreating && canCreateJob)) && (
-                  <div className="pt-1">
+                  <div className="pt-1 flex flex-wrap items-center gap-2.5">
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
@@ -832,6 +935,17 @@ export const JobModal: React.FC<JobModalProps> = ({
                       <Upload className="w-4 h-4" />
                       <span>Subir archivo PDF</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => photoInputRef.current?.click()}
+                      disabled={isAnalyzingPdf}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-graphite-900 hover:bg-graphite-800 text-white text-xs font-bold cursor-pointer shadow-xs transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <Camera className="w-4 h-4 text-oterio-400" />
+                      <span>Autorellenar con foto (Móvil)</span>
+                    </button>
+
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -842,6 +956,36 @@ export const JobModal: React.FC<JobModalProps> = ({
                   </div>
                 )}
               </div>
+            )}
+
+            {/* Hidden camera input + option to scan photo even if a PDF is already attached */}
+            {(isAdmin || (isCreating && canCreateJob)) && (
+              <>
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePhotoCapture}
+                  className="hidden"
+                />
+                {currentAttachment && (
+                  <div className="mt-3 pt-2.5 border-t border-graphite-200/80 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] text-graphite-500">
+                      ¿Tienes también un parte en papel? Escanea sus datos sin guardar la foto:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => photoInputRef.current?.click()}
+                      disabled={isAnalyzingPdf}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-graphite-900 hover:bg-graphite-800 text-white text-[11px] font-bold cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-oterio-400" />
+                      <span>Autorellenar con foto</span>
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
 

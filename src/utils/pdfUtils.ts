@@ -36,3 +36,77 @@ export function downloadPdfFromDataUrl(dataUrl: string, fileName: string): void 
     URL.revokeObjectURL(blobUrl);
   }, 4000);
 }
+
+/**
+ * Reads an image file (e.g., from a mobile camera capture) into an ephemeral
+ * in-memory Base64 JPEG string, scaling it down if needed for fast AI analysis,
+ * and immediately revoking all temporary DOM/Blob resources so nothing is stored locally.
+ */
+export function readPhotoAsEphemeralBase64(
+  file: File
+): Promise<{ base64: string; mimeType: string }> {
+  return new Promise((resolve, reject) => {
+    const tempObjectUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = () => {
+      try {
+        URL.revokeObjectURL(tempObjectUrl);
+        const MAX_DIMENSION = 2000;
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+
+        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+          if (width >= height) {
+            height = Math.round((height * MAX_DIMENSION) / width);
+            width = MAX_DIMENSION;
+          } else {
+            width = Math.round((width * MAX_DIMENSION) / height);
+            height = MAX_DIMENSION;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          canvas.width = 0;
+          canvas.height = 0;
+          reject(new Error('No se pudo procesar la imagen en memoria.'));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+
+        // Immediately release canvas memory
+        canvas.width = 0;
+        canvas.height = 0;
+
+        resolve({ base64: dataUrl, mimeType: 'image/jpeg' });
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(tempObjectUrl);
+      // Fallback to transient FileReader in memory
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve({
+          base64: String(reader.result || ''),
+          mimeType: file.type || 'image/jpeg',
+        });
+      };
+      reader.onerror = () => {
+        reject(new Error('No se pudo leer la fotografía capturada.'));
+      };
+      reader.readAsDataURL(file);
+    };
+
+    img.src = tempObjectUrl;
+  });
+}
