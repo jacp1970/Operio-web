@@ -18,10 +18,17 @@ import {
   ShieldAlert,
   Timer,
   Loader2,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
+  SlidersHorizontal,
+  RotateCcw,
+  GripVertical,
 } from 'lucide-react';
 import { getDepartmentColor, getOperatorColor } from '../utils/colorUtils';
 import { formatSecondsToHuman } from '../utils/timeUtils';
 import { ConfirmModal } from './ConfirmModal';
+import { useWorkOrderDragDrop } from '../hooks/useWorkOrderDragDrop';
 
 interface DashboardViewProps {
   onOpenJobDetail: (job: WorkOrder) => void;
@@ -41,6 +48,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     getDepartmentName,
     getStatus,
     getUser,
+    reorderWorkOrder,
+    moveWorkOrderToPosition,
+    resetWorkOrdersOrderToDate,
     deleteWorkOrderPermanently,
   } = useApp();
 
@@ -58,14 +68,68 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('todos');
   const [selectedOpFilter, setSelectedOpFilter] = useState<string>('todos');
 
+  // Sort mode: custom priority order vs creation date (synced with JobsView preference)
+  const [sortMode, setSortModeState] = useState<'custom' | 'date'>(() => {
+    try {
+      const saved = localStorage.getItem('operio_jobs_sort_criteria');
+      return saved === 'date' ? 'date' : 'custom';
+    } catch {
+      return 'custom';
+    }
+  });
+  const setSortMode = (next: 'custom' | 'date') => {
+    setSortModeState(next);
+    try {
+      localStorage.setItem('operio_jobs_sort_criteria', next === 'custom' ? 'operator_order' : 'date');
+    } catch {
+      // Ignore storage errors
+    }
+  };
+
   // Delete confirmation state for Administrador
   const [deleteTargetJob, setDeleteTargetJob] = useState<WorkOrder | null>(null);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
   const [feedbackBanner, setFeedbackBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  if (!currentUser) return null;
+  const isAdmin = currentUser?.role === 'administrador';
+  const canReorder = Boolean(currentUser) && currentUser?.role !== 'solo_lectura';
 
-  const isAdmin = currentUser.role === 'administrador';
+  const handleDropReorder = (
+    sourceJobId: string,
+    targetJobId: string,
+    scopedJobIds: string[],
+    targetPositionNumber: number
+  ) => {
+    if (!canReorder) return;
+    if (sortMode !== 'custom') {
+      setSortMode('custom');
+    }
+    const res = moveWorkOrderToPosition(sourceJobId, targetJobId, scopedJobIds);
+    if (res.success) {
+      const movedJob = workOrders.find((w) => w.id === sourceJobId);
+      setFeedbackBanner({
+        type: 'success',
+        text: movedJob
+          ? `Orden ${movedJob.ot} colocada en la posición #${targetPositionNumber} (orden personalizado).`
+          : `Orden movida a la posición #${targetPositionNumber} (orden personalizado).`,
+      });
+      setTimeout(() => setFeedbackBanner(null), 2800);
+    }
+  };
+
+  const {
+    draggedJobId,
+    touchPreview,
+    shouldSuppressClick,
+    getDragItemProps,
+    getTouchHandleProps,
+    getDropIndicator,
+  } = useWorkOrderDragDrop({
+    enabled: canReorder,
+    onMove: handleDropReorder,
+  });
+
+  if (!currentUser) return null;
 
   const handleConfirmPermanentDelete = async () => {
     if (!deleteTargetJob || !isAdmin) return;
@@ -97,31 +161,197 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return s?.isCompleted ?? false;
   };
 
-  const activeWorkOrders = workOrders.filter((wo) => !isJobCompleted(wo));
-  const completedWorkOrders = workOrders.filter((wo) => isJobCompleted(wo));
-  const urgentWorkOrders = workOrders.filter((wo) => wo.isUrgent && !isJobCompleted(wo));
-  const alertWorkOrders = workOrders.filter((wo) => wo.alerts.length > 0 && !isJobCompleted(wo));
+  const sortJobs = (list: WorkOrder[]) => {
+    return [...list].sort((a, b) => {
+      if (sortMode === 'date') {
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      }
+      const posA = a.orderPosition !== undefined ? a.orderPosition : 999999;
+      const posB = b.orderPosition !== undefined ? b.orderPosition : 999999;
+      if (posA !== posB) return posA - posB;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+  };
+
+  const handleReorderJob = (
+    jobId: string,
+    direction: 'up' | 'down',
+    scopedJobIds: string[]
+  ) => {
+    if (!canReorder) return;
+    if (sortMode !== 'custom') {
+      setSortMode('custom');
+    }
+    const res = reorderWorkOrder(jobId, direction, scopedJobIds);
+    if (res.success) {
+      setFeedbackBanner({
+        type: 'success',
+        text:
+          direction === 'up'
+            ? 'Prioridad del trabajo aumentada (orden personalizado actualizado).'
+            : 'Posición del trabajo reducida (orden personalizado actualizado).',
+      });
+      setTimeout(() => setFeedbackBanner(null), 2800);
+    }
+  };
+
+  const handleResetOrderToDate = () => {
+    if (!canReorder) return;
+    resetWorkOrdersOrderToDate();
+    setSortMode('date');
+    setFeedbackBanner({
+      type: 'success',
+      text: 'Trabajos restablecidos al orden por fecha de creación.',
+    });
+    setTimeout(() => setFeedbackBanner(null), 2800);
+  };
+
+  const renderSortControlsBar = () => {
+    if (!canReorder) return null;
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-white px-3.5 py-2.5 rounded-2xl border border-graphite-200/80 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-bold text-graphite-600 uppercase tracking-wider flex items-center gap-1.5">
+            <ArrowUpDown className="w-3.5 h-3.5 text-oterio-600" />
+            <span>Ordenación:</span>
+          </span>
+          <div className="inline-flex p-0.5 bg-graphite-100 rounded-xl border border-graphite-200">
+            <button
+              type="button"
+              onClick={() => setSortMode('custom')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                sortMode === 'custom'
+                  ? 'bg-oterio-600 text-white shadow-2xs'
+                  : 'text-graphite-600 hover:text-graphite-900'
+              }`}
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+              <span>Orden Personalizado</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortMode('date')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                sortMode === 'date'
+                  ? 'bg-white text-oterio-700 shadow-2xs border border-oterio-100'
+                  : 'text-graphite-600 hover:text-graphite-900'
+              }`}
+            >
+              <Calendar className="w-3 h-3" />
+              <span>Por Fecha</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-graphite-500 hidden lg:inline">
+            Arrastra cualquier orden a la posición deseada (o usa ↑ / ↓)
+          </span>
+          {sortMode === 'custom' && (
+            <button
+              type="button"
+              onClick={handleResetOrderToDate}
+              className="text-xs font-semibold text-graphite-600 hover:text-rose-600 bg-graphite-50 hover:bg-rose-50 px-2.5 py-1 rounded-xl border border-graphite-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Restablecer a fecha</span>
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const activeWorkOrders = sortJobs(workOrders.filter((wo) => !isJobCompleted(wo)));
+  const completedWorkOrders = sortJobs(workOrders.filter((wo) => isJobCompleted(wo)));
+  const urgentWorkOrders = sortJobs(workOrders.filter((wo) => wo.isUrgent && !isJobCompleted(wo)));
+  const alertWorkOrders = sortJobs(workOrders.filter((wo) => wo.alerts.length > 0 && !isJobCompleted(wo)));
+
+  const renderTouchPreview = () => {
+    if (!touchPreview) return null;
+    return (
+      <div
+        className="fixed z-50 pointer-events-none -translate-x-1/2 -translate-y-full px-3 py-1.5 rounded-xl bg-oterio-600 text-white text-xs font-bold shadow-lg border border-oterio-400 flex items-center gap-1.5"
+        style={{ left: touchPreview.x, top: Math.max(24, touchPreview.y - 14) }}
+      >
+        <GripVertical className="w-3.5 h-3.5 opacity-80" />
+        <span className="truncate max-w-[220px]">{touchPreview.label}</span>
+      </div>
+    );
+  };
 
   // Render a job card item
-  const renderJobCard = (job: WorkOrder) => {
+  const renderJobCard = (
+    job: WorkOrder,
+    index?: number,
+    scopedJobIds?: string[],
+    scopeId?: string
+  ) => {
     const status = getStatus(job.statusId);
     const assignedOp = getUser(job.assignedOperatorId);
     const deptName = getDepartmentName(job.departmentId);
     const deptColor = getDepartmentColor(job.departmentId, deptName);
     const opColor = getOperatorColor(job.assignedOperatorId, assignedOp?.name, assignedOp?.color);
+    const showReorderControls =
+      canReorder &&
+      index !== undefined &&
+      scopedJobIds !== undefined &&
+      scopedJobIds.length > 1;
+    const effectiveScopeId = scopeId || 'dashboard-default';
+    const isDraggingThis = showReorderControls && draggedJobId === job.id;
+    const dropIndicator = showReorderControls ? getDropIndicator(job.id, effectiveScopeId) : null;
+    const dragProps = showReorderControls
+      ? getDragItemProps(job, effectiveScopeId, scopedJobIds, index)
+      : {};
 
     return (
       <div
         key={job.id}
-        onClick={() => onOpenJobDetail(job)}
-        className="group relative bg-white border border-graphite-200/80 rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md hover:border-oterio-300 transition-all cursor-pointer flex flex-col justify-between"
+        {...dragProps}
+        onClick={() => {
+          if (shouldSuppressClick()) return;
+          onOpenJobDetail(job);
+        }}
+        className={`group relative bg-white border rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between ${
+          showReorderControls
+            ? 'cursor-grab active:cursor-grabbing'
+            : 'cursor-pointer'
+        } ${
+          isDraggingThis
+            ? 'opacity-45 border-dashed border-oterio-400 ring-2 ring-oterio-300 scale-[0.98]'
+            : dropIndicator
+            ? 'border-oterio-500 ring-2 ring-oterio-500 bg-oterio-50/40'
+            : 'border-graphite-200/80 hover:border-oterio-300'
+        }`}
       >
+        {dropIndicator && (
+          <div
+            className={`pointer-events-none absolute left-3 right-3 h-1 rounded-full bg-oterio-600 ${
+              dropIndicator === 'before' ? '-top-1' : '-bottom-1'
+            }`}
+          />
+        )}
         <div>
           <div className="flex items-start justify-between gap-2 mb-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {showReorderControls && (
+                <span
+                  {...getTouchHandleProps(job, effectiveScopeId, scopedJobIds, index)}
+                  onClick={(e) => e.stopPropagation()}
+                  title="Arrastra para mover a otra posición"
+                  className="touch-none p-1 -ml-1 rounded-md text-graphite-400 hover:text-oterio-600 hover:bg-oterio-50 cursor-grab active:cursor-grabbing shrink-0"
+                >
+                  <GripVertical className="w-4 h-4" />
+                </span>
+              )}
               <span className="font-mono text-sm font-bold text-graphite-900 bg-graphite-100 px-2.5 py-1 rounded-lg">
                 {job.ot}
               </span>
+              {showReorderControls && sortMode === 'custom' && (
+                <span className="px-1.5 py-0.5 rounded-md bg-oterio-50 text-oterio-700 font-mono text-[11px] font-bold border border-oterio-200">
+                  #{index + 1}
+                </span>
+              )}
               {job.isUrgent && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200/80 px-2 py-0.5 rounded-full animate-pulse">
                   <Flame className="w-3 h-3 text-rose-600" /> URGENTE
@@ -129,7 +359,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               )}
             </div>
 
-            {/* Status badge + Admin Delete icon */}
+            {/* Status badge + Priority arrows + Admin Delete icon */}
             <div className="flex items-center gap-1.5 shrink-0">
               <span
                 className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
@@ -140,6 +370,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               >
                 {status?.name || 'Estado'}
               </span>
+
+              {showReorderControls && (
+                <div
+                  className="flex items-center bg-graphite-100 rounded-lg p-0.5 border border-graphite-200"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    disabled={index === 0}
+                    onClick={() => handleReorderJob(job.id, 'up', scopedJobIds)}
+                    title="Subir prioridad"
+                    aria-label={`Subir prioridad de ${job.ot}`}
+                    className="p-1 rounded text-graphite-600 hover:text-oterio-600 hover:bg-white disabled:opacity-20 cursor-pointer"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={index === scopedJobIds.length - 1}
+                    onClick={() => handleReorderJob(job.id, 'down', scopedJobIds)}
+                    title="Bajar prioridad"
+                    aria-label={`Bajar prioridad de ${job.ot}`}
+                    className="p-1 rounded text-graphite-600 hover:text-oterio-600 hover:bg-white disabled:opacity-20 cursor-pointer"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
 
               {isAdmin && (
                 <button
@@ -415,15 +673,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </button>
           </div>
 
+          {renderSortControlsBar()}
+
           {/* TAB: Por operario view */}
           {adminTab === 'por_operario' ? (
             <div className="space-y-6">
               {users
                 .filter((u) => u.role === 'operario')
                 .map((op) => {
-                  const opJobs = workOrders.filter(
-                    (w) => w.assignedOperatorId === op.id && !isJobCompleted(w)
+                  const opJobs = sortJobs(
+                    workOrders.filter(
+                      (w) => w.assignedOperatorId === op.id && !isJobCompleted(w)
+                    )
                   );
+                  const opJobIds = opJobs.map((j) => j.id);
                   const opUrgentCount = opJobs.filter((w) => w.isUrgent).length;
                   const opAlertsCount = opJobs.filter((w) => w.alerts.length > 0).length;
 
@@ -466,7 +729,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </p>
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                          {opJobs.map((j) => renderJobCard(j))}
+                          {opJobs.map((j, idx) =>
+                            renderJobCard(j, idx, opJobIds, `dash-admin-op-${op.id}`)
+                          )}
                         </div>
                       )}
                     </div>
@@ -483,7 +748,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {activeWorkOrders.map((j) => renderJobCard(j))}
+                    {activeWorkOrders.map((j, idx) =>
+                      renderJobCard(
+                        j,
+                        idx,
+                        activeWorkOrders.map((x) => x.id),
+                        'dash-admin-activos'
+                      )
+                    )}
                   </div>
                 )
               )}
@@ -495,7 +767,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {urgentWorkOrders.map((j) => renderJobCard(j))}
+                    {urgentWorkOrders.map((j, idx) =>
+                      renderJobCard(
+                        j,
+                        idx,
+                        urgentWorkOrders.map((x) => x.id),
+                        'dash-admin-urgentes'
+                      )
+                    )}
                   </div>
                 )
               )}
@@ -507,7 +786,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {alertWorkOrders.map((j) => renderJobCard(j))}
+                    {alertWorkOrders.map((j, idx) =>
+                      renderJobCard(
+                        j,
+                        idx,
+                        alertWorkOrders.map((x) => x.id),
+                        'dash-admin-alertas'
+                      )
+                    )}
                   </div>
                 )
               )}
@@ -519,13 +805,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {completedWorkOrders.map((j) => renderJobCard(j))}
+                    {completedWorkOrders.map((j, idx) =>
+                      renderJobCard(
+                        j,
+                        idx,
+                        completedWorkOrders.map((x) => x.id),
+                        'dash-admin-terminados'
+                      )
+                    )}
                   </div>
                 )
               )}
             </div>
           )}
         </div>
+
+        {renderTouchPreview()}
 
         {/* Permanent Database Deletion Confirmation Modal */}
         <ConfirmModal
@@ -551,20 +846,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
      ========================================================================= */
   if (currentUser.role === 'operario' || currentUser.role === 'administrativo') {
     // 1. Sus trabajos activos asignados
-    const myActiveJobs = workOrders.filter(
-      (wo) => wo.assignedOperatorId === currentUser.id && !isJobCompleted(wo)
+    const myActiveJobs = sortJobs(
+      workOrders.filter(
+        (wo) => wo.assignedOperatorId === currentUser.id && !isJobCompleted(wo)
+      )
     );
 
     // 2. Sus trabajos urgentes
-    const myUrgentJobs = myActiveJobs.filter((wo) => wo.isUrgent);
+    const myUrgentJobs = sortJobs(myActiveJobs.filter((wo) => wo.isUrgent));
 
     // 3. Trabajos asignados a su departamento de otros operarios
     const userDepts = currentUser.departmentIds || [];
-    const departmentOtherJobs = workOrders.filter(
-      (wo) =>
-        userDepts.includes(wo.departmentId) &&
-        wo.assignedOperatorId !== currentUser.id &&
-        !isJobCompleted(wo)
+    const departmentOtherJobs = sortJobs(
+      workOrders.filter(
+        (wo) =>
+          userDepts.includes(wo.departmentId) &&
+          wo.assignedOperatorId !== currentUser.id &&
+          !isJobCompleted(wo)
+      )
     );
 
     const isAdministrativo = currentUser.role === 'administrativo';
@@ -587,6 +886,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </p>
           </div>
         </div>
+
+        {feedbackBanner && (
+          <div
+            className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 animate-in fade-in ${
+              feedbackBanner.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border-rose-200 text-rose-800'
+            }`}
+          >
+            <span>{feedbackBanner.text}</span>
+            <button
+              type="button"
+              onClick={() => setFeedbackBanner(null)}
+              className="text-xs font-bold opacity-70 hover:opacity-100 cursor-pointer"
+            >
+              &times;
+            </button>
+          </div>
+        )}
 
         {/* 3 Metric Cards matching PDF for Operario */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -650,11 +968,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Tab view */}
         <div className="space-y-4">
-          <h3 className="text-lg font-bold text-graphite-900">
-            {operarioTab === 'mis_activos' && 'Tus Órdenes de Trabajo Activas'}
-            {operarioTab === 'mis_urgentes' && 'Tus Órdenes Urgentes (Máxima Prioridad)'}
-            {operarioTab === 'departamento_otros' && 'Trabajos en tu Departamento asignados a Compañeros'}
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-lg font-bold text-graphite-900">
+              {operarioTab === 'mis_activos' && 'Tus Órdenes de Trabajo Activas'}
+              {operarioTab === 'mis_urgentes' && 'Tus Órdenes Urgentes (Máxima Prioridad)'}
+              {operarioTab === 'departamento_otros' && 'Trabajos en tu Departamento asignados a Compañeros'}
+            </h3>
+            <button
+              onClick={() => setCurrentNav('trabajos')}
+              className="text-xs font-semibold text-oterio-600 hover:text-oterio-800 inline-flex items-center gap-1 cursor-pointer"
+            >
+              Ver todos en Trabajos <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {renderSortControlsBar()}
 
           {operarioTab === 'mis_activos' && (
             myActiveJobs.length === 0 ? (
@@ -663,7 +991,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {myActiveJobs.map((j) => renderJobCard(j))}
+                {myActiveJobs.map((j, idx) =>
+                  renderJobCard(
+                    j,
+                    idx,
+                    myActiveJobs.map((x) => x.id),
+                    'dash-op-mis-activos'
+                  )
+                )}
               </div>
             )
           )}
@@ -675,7 +1010,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {myUrgentJobs.map((j) => renderJobCard(j))}
+                {myUrgentJobs.map((j, idx) =>
+                  renderJobCard(
+                    j,
+                    idx,
+                    myUrgentJobs.map((x) => x.id),
+                    'dash-op-mis-urgentes'
+                  )
+                )}
               </div>
             )
           )}
@@ -687,11 +1029,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {departmentOtherJobs.map((j) => renderJobCard(j))}
+                {departmentOtherJobs.map((j, idx) =>
+                  renderJobCard(
+                    j,
+                    idx,
+                    departmentOtherJobs.map((x) => x.id),
+                    'dash-op-depto-otros'
+                  )
+                )}
               </div>
             )
           )}
         </div>
+
+        {renderTouchPreview()}
       </div>
     );
   }
@@ -702,11 +1053,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
      creados, clasificados por departamento y operario, ver el estado y las alertas
      pero no podrá modificar nada."
      ========================================================================= */
-  const filteredJobsForReadOnly = workOrders.filter((wo) => {
-    if (selectedDeptFilter !== 'todos' && wo.departmentId !== selectedDeptFilter) return false;
-    if (selectedOpFilter !== 'todos' && wo.assignedOperatorId !== selectedOpFilter) return false;
-    return true;
-  });
+  const filteredJobsForReadOnly = sortJobs(
+    workOrders.filter((wo) => {
+      if (selectedDeptFilter !== 'todos' && wo.departmentId !== selectedDeptFilter) return false;
+      if (selectedOpFilter !== 'todos' && wo.assignedOperatorId !== selectedOpFilter) return false;
+      return true;
+    })
+  );
 
   return (
     <div className="space-y-6">

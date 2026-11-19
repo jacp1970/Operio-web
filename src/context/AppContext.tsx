@@ -82,7 +82,16 @@ interface AppContextType {
   deleteWorkOrder: (id: string) => { success: boolean; error?: string };
   deleteWorkOrderPermanently: (id: string) => Promise<{ success: boolean; error?: string }>;
   toggleWorkOrderInvoiced: (workOrderId: string, invoiced: boolean) => { success: boolean; error?: string };
-  reorderWorkOrder: (workOrderId: string, direction: 'up' | 'down') => { success: boolean; error?: string };
+  reorderWorkOrder: (
+    workOrderId: string,
+    direction: 'up' | 'down',
+    scopedJobIds?: string[]
+  ) => { success: boolean; error?: string };
+  moveWorkOrderToPosition: (
+    sourceWorkOrderId: string,
+    targetWorkOrderId: string,
+    scopedJobIds?: string[]
+  ) => { success: boolean; error?: string };
   resetWorkOrdersOrderToDate: () => void;
   addAlertToJob: (workOrderId: string, alertText: string) => void;
   removeAlertFromJob: (workOrderId: string, alertId: string) => void;
@@ -1852,75 +1861,235 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
-   * Repositions work orders under the operator's/admin's criteria (criterio del operario).
-   * Moves a job up or down relative to its adjacent job and updates both in state and Firestore.
+   * Repositions work orders according to custom priority criteria (available to all roles except 'solo_lectura').
+   * When scopedJobIds is provided (e.g. a specific column or filtered list), swaps relative to the adjacent visible job
+   * in that scope while preserving the positions of unrelated jobs, and persists all changed orderPosition values.
    */
-  const reorderWorkOrder = (workOrderId: string, direction: 'up' | 'down') => {
+  const reorderWorkOrder = (
+    workOrderId: string,
+    direction: 'up' | 'down',
+    scopedJobIds?: string[]
+  ) => {
     if (!currentUser || currentUser.role === 'solo_lectura') {
-      return { success: false, error: 'Los usuarios de solo lectura no pueden reposicionar trabajos.' };
+      return { success: false, error: 'Los usuarios de solo lectura no pueden ordenar trabajos.' };
     }
     if (!companyId) return { success: false, error: 'Empresa no encontrada.' };
 
-    // Get all jobs for this company, sorted by active orderPosition, falling back to createdAt
+    // Build an immutable sorted copy of all company work orders (existing custom order, fallback createdAt desc)
     const companyJobs = allWorkOrders
       .filter((w) => w.companyId === companyId)
       .slice()
       .sort((a, b) => {
-        if (a.orderPosition !== undefined && b.orderPosition !== undefined) {
-          return a.orderPosition - b.orderPosition;
+        const hasA = a.orderPosition !== undefined && a.orderPosition !== null;
+        const hasB = b.orderPosition !== undefined && b.orderPosition !== null;
+        if (hasA && hasB && a.orderPosition !== b.orderPosition) {
+          return (a.orderPosition as number) - (b.orderPosition as number);
         }
+        if (hasA && !hasB) return -1;
+        if (!hasA && hasB) return 1;
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
 
-    // Ensure strictly unique sequential orderPositions (0, 1, 2, ...)
-    companyJobs.forEach((job, index) => {
-      job.orderPosition = index;
-    });
+    const jobById = new Map<string, WorkOrder>();
+    companyJobs.forEach((job) => jobById.set(job.id, job));
 
-    const currentIndex = companyJobs.findIndex((w) => w.id === workOrderId);
-    if (currentIndex === -1) return { success: false, error: 'Trabajo no encontrado.' };
-
-    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= companyJobs.length) {
-      return { success: false, error: 'El trabajo ya está en la posición máxima.' };
+    if (!jobById.has(workOrderId)) {
+      return { success: false, error: 'Trabajo no encontrado.' };
     }
 
-    // Swap positions
-    const temp = companyJobs[currentIndex];
-    companyJobs[currentIndex] = companyJobs[targetIndex];
-    companyJobs[targetIndex] = temp;
+    const reorderedJobs = [...companyJobs];
+
+    if (scopedJobIds && scopedJobIds.length > 0) {
+      // Keep only valid unique IDs belonging to this company
+      const validScopedIds = Array.from(new Set(scopedJobIds)).filter((id) => jobById.has(id));
+      const scopedIdx = validScopedIds.indexOf(workOrderId);
+      if (scopedIdx === -1) {
+        return { success: false, error: 'Trabajo no encontrado en la vista actual.' };
+      }
+
+      const targetScopedIdx = direction === 'up' ? scopedIdx - 1 : scopedIdx + 1;
+      if (targetScopedIdx < 0 || targetScopedIdx >= validScopedIds.length) {
+        return { success: false, error: 'El trabajo ya está en la posición límite.' };
+      }
+
+      // Compute desired order for the scoped jobs by swapping the moved job with its visible neighbor
+      const desiredScopedIds = [...validScopedIds];
+      const tempId = desiredScopedIds[scopedIdx];
+      desiredScopedIds[scopedIdx] = desiredScopedIds[targetScopedIdx];
+      desiredScopedIds[targetScopedIdx] = tempId;
+
+      // Place the reordered scoped jobs back into the slots they occupy in the full company list
+      const scopedIdSet = new Set(validScopedIds);
+      const occupiedSlots: number[] = [];
+      reorderedJobs.forEach((job, idx) => {
+        if (scopedIdSet.has(job.id)) {
+          occupiedSlots.push(idx);
+        }
+      });
+
+      occupiedSlots.forEach((slotIdx, i) => {
+        const nextJob = jobById.get(desiredScopedIds[i]);
+        if (nextJob) {
+          reorderedJobs[slotIdx] = nextJob;
+        }
+      });
+    } else {
+      const currentIndex = reorderedJobs.findIndex((w) => w.id === workOrderId);
+      const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+      if (targetIndex < 0 || targetIndex >= reorderedJobs.length) {
+        return { success: false, error: 'El trabajo ya está en la posición límite.' };
+      }
+
+      const temp = reorderedJobs[currentIndex];
+      reorderedJobs[currentIndex] = reorderedJobs[targetIndex];
+      reorderedJobs[targetIndex] = temp;
+    }
 
     const updatedAt = new Date().toISOString();
     const posMap = new Map<string, number>();
+    const changedIds: string[] = [];
 
-    companyJobs.forEach((job, idx) => {
-      job.orderPosition = idx;
+    reorderedJobs.forEach((job, idx) => {
       posMap.set(job.id, idx);
+      if (job.orderPosition !== idx) {
+        changedIds.push(job.id);
+      }
     });
 
-    // Update local state
+    // Update local state immutably
     setAllWorkOrders((prev) =>
       prev.map((w) => {
         if (posMap.has(w.id)) {
-          return { ...w, orderPosition: posMap.get(w.id)!, updatedAt };
+          const nextPos = posMap.get(w.id)!;
+          if (w.orderPosition !== nextPos) {
+            return { ...w, orderPosition: nextPos, updatedAt };
+          }
         }
         return w;
       })
     );
 
-    // Persist swapped positions to Firestore
-    const jobA = companyJobs[currentIndex];
-    const jobB = companyJobs[targetIndex];
-    fsUpdate('workOrders', jobA.id, { orderPosition: jobA.orderPosition, updatedAt });
-    fsUpdate('workOrders', jobB.id, { orderPosition: jobB.orderPosition, updatedAt });
+    // Persist every work order whose orderPosition changed so Firestore stays consistent
+    changedIds.forEach((id) => {
+      fsUpdate('workOrders', id, { orderPosition: posMap.get(id)!, updatedAt });
+    });
 
     return { success: true };
   };
 
   /**
-   * Resets the manual operator order back to the default creation date order
+   * Moves a work order directly to the position of another work order via drag-and-drop.
+   * Available to all roles except 'solo_lectura'. Preserves relative order of unrelated jobs/columns.
+   */
+  const moveWorkOrderToPosition = (
+    sourceWorkOrderId: string,
+    targetWorkOrderId: string,
+    scopedJobIds?: string[]
+  ) => {
+    if (!currentUser || currentUser.role === 'solo_lectura') {
+      return { success: false, error: 'Los usuarios de solo lectura no pueden ordenar trabajos.' };
+    }
+    if (!companyId) return { success: false, error: 'Empresa no encontrada.' };
+    if (sourceWorkOrderId === targetWorkOrderId) {
+      return { success: true };
+    }
+
+    const companyJobs = allWorkOrders
+      .filter((w) => w.companyId === companyId)
+      .slice()
+      .sort((a, b) => {
+        const hasA = a.orderPosition !== undefined && a.orderPosition !== null;
+        const hasB = b.orderPosition !== undefined && b.orderPosition !== null;
+        if (hasA && hasB && a.orderPosition !== b.orderPosition) {
+          return (a.orderPosition as number) - (b.orderPosition as number);
+        }
+        if (hasA && !hasB) return -1;
+        if (!hasA && hasB) return 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+
+    const jobById = new Map<string, WorkOrder>();
+    companyJobs.forEach((job) => jobById.set(job.id, job));
+
+    if (!jobById.has(sourceWorkOrderId) || !jobById.has(targetWorkOrderId)) {
+      return { success: false, error: 'Trabajo no encontrado.' };
+    }
+
+    const reorderedJobs = [...companyJobs];
+
+    if (scopedJobIds && scopedJobIds.length > 0) {
+      const validScopedIds = Array.from(new Set(scopedJobIds)).filter((id) => jobById.has(id));
+      const sourceIdx = validScopedIds.indexOf(sourceWorkOrderId);
+      const targetIdx = validScopedIds.indexOf(targetWorkOrderId);
+
+      if (sourceIdx === -1 || targetIdx === -1) {
+        return { success: false, error: 'Trabajo no encontrado en la vista actual.' };
+      }
+
+      const desiredScopedIds = [...validScopedIds];
+      const [movedId] = desiredScopedIds.splice(sourceIdx, 1);
+      desiredScopedIds.splice(targetIdx, 0, movedId);
+
+      const scopedIdSet = new Set(validScopedIds);
+      const occupiedSlots: number[] = [];
+      reorderedJobs.forEach((job, idx) => {
+        if (scopedIdSet.has(job.id)) {
+          occupiedSlots.push(idx);
+        }
+      });
+
+      occupiedSlots.forEach((slotIdx, i) => {
+        const nextJob = jobById.get(desiredScopedIds[i]);
+        if (nextJob) {
+          reorderedJobs[slotIdx] = nextJob;
+        }
+      });
+    } else {
+      const sourceIdx = reorderedJobs.findIndex((w) => w.id === sourceWorkOrderId);
+      const targetIdx = reorderedJobs.findIndex((w) => w.id === targetWorkOrderId);
+      if (sourceIdx === -1 || targetIdx === -1) {
+        return { success: false, error: 'Trabajo no encontrado.' };
+      }
+
+      const [movedJob] = reorderedJobs.splice(sourceIdx, 1);
+      reorderedJobs.splice(targetIdx, 0, movedJob);
+    }
+
+    const updatedAt = new Date().toISOString();
+    const posMap = new Map<string, number>();
+    const changedIds: string[] = [];
+
+    reorderedJobs.forEach((job, idx) => {
+      posMap.set(job.id, idx);
+      if (job.orderPosition !== idx) {
+        changedIds.push(job.id);
+      }
+    });
+
+    setAllWorkOrders((prev) =>
+      prev.map((w) => {
+        if (posMap.has(w.id)) {
+          const nextPos = posMap.get(w.id)!;
+          if (w.orderPosition !== nextPos) {
+            return { ...w, orderPosition: nextPos, updatedAt };
+          }
+        }
+        return w;
+      })
+    );
+
+    changedIds.forEach((id) => {
+      fsUpdate('workOrders', id, { orderPosition: posMap.get(id)!, updatedAt });
+    });
+
+    return { success: true };
+  };
+
+  /**
+   * Resets custom order back to the default creation date order (blocked for solo_lectura)
    */
   const resetWorkOrdersOrderToDate = () => {
+    if (!currentUser || currentUser.role === 'solo_lectura') return;
     if (!companyId) return;
 
     const sortedByDate = allWorkOrders
@@ -2430,6 +2599,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteWorkOrderPermanently,
         toggleWorkOrderInvoiced,
         reorderWorkOrder,
+        moveWorkOrderToPosition,
         resetWorkOrdersOrderToDate,
         addAlertToJob,
         removeAlertFromJob,

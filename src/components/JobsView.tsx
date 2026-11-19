@@ -29,6 +29,7 @@ import {
   Trash2,
   Loader2,
   X,
+  GripVertical,
 } from 'lucide-react';
 import {
   getOperatorColor,
@@ -37,6 +38,7 @@ import {
 } from '../utils/colorUtils';
 import { formatSecondsToHuman } from '../utils/timeUtils';
 import { ConfirmModal } from './ConfirmModal';
+import { useWorkOrderDragDrop } from '../hooks/useWorkOrderDragDrop';
 
 interface JobsViewProps {
   onOpenJobDetail: (job: WorkOrder) => void;
@@ -59,6 +61,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
     getStatus,
     getUser,
     reorderWorkOrder,
+    moveWorkOrderToPosition,
     resetWorkOrdersOrderToDate,
     deleteWorkOrderPermanently,
   } = useApp();
@@ -66,8 +69,9 @@ export const JobsView: React.FC<JobsViewProps> = ({
   const isAdmin = currentUser?.role === 'administrador';
   const isOperario = currentUser?.role === 'operario';
   const isAdministrativo = currentUser?.role === 'administrativo';
+  const isReadOnly = currentUser?.role === 'solo_lectura';
   const canCreate = isAdmin || isAdministrativo;
-  const canReorder = isAdmin || isOperario || isAdministrativo;
+  const canReorder = Boolean(currentUser) && !isReadOnly;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [searchScope, setSearchScope] = useState<'todos' | 'activos' | 'completados'>('todos');
@@ -89,13 +93,62 @@ export const JobsView: React.FC<JobsViewProps> = ({
   // Legend visibility toggle
   const [showColorLegend, setShowColorLegend] = useState(false);
 
-  // Sorting: by default ordered by date ('date'); operator can reposition ('operator_order')
-  const [sortCriteria, setSortCriteria] = useState<'date' | 'operator_order'>('date');
+  // Sorting: defaults to creation date ('date'), persists preference when user switches or reorders ('operator_order')
+  const [sortCriteria, setSortCriteriaState] = useState<'date' | 'operator_order'>(() => {
+    try {
+      const saved = localStorage.getItem('operio_jobs_sort_criteria');
+      return saved === 'operator_order' ? 'operator_order' : 'date';
+    } catch {
+      return 'date';
+    }
+  });
+  const setSortCriteria = (next: 'date' | 'operator_order') => {
+    setSortCriteriaState(next);
+    try {
+      localStorage.setItem('operio_jobs_sort_criteria', next);
+    } catch {
+      // Ignore storage errors
+    }
+  };
   const [dateDirection, setDateDirection] = useState<'desc' | 'asc'>('desc');
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [deleteTargetJob, setDeleteTargetJob] = useState<WorkOrder | null>(null);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+
+  const handleDropReorder = (
+    sourceJobId: string,
+    targetJobId: string,
+    scopedJobIds: string[],
+    targetPositionNumber: number
+  ) => {
+    if (!canReorder) return;
+    if (sortCriteria !== 'operator_order') {
+      setSortCriteria('operator_order');
+    }
+    const res = moveWorkOrderToPosition(sourceJobId, targetJobId, scopedJobIds);
+    if (res.success) {
+      const movedJob = workOrders.find((w) => w.id === sourceJobId);
+      setFeedbackNotice(
+        movedJob
+          ? `Orden ${movedJob.ot} colocada en la posición #${targetPositionNumber} (orden personalizado).`
+          : `Orden movida a la posición #${targetPositionNumber} (orden personalizado).`
+      );
+      setTimeout(() => setFeedbackNotice(null), 3000);
+    }
+  };
+
+  const {
+    draggedJobId,
+    touchPreview,
+    shouldSuppressClick,
+    getDragItemProps,
+    getTouchHandleProps,
+    getDropIndicator,
+  } = useWorkOrderDragDrop({
+    enabled: canReorder,
+    onMove: handleDropReorder,
+  });
 
   if (!currentUser) return null;
 
@@ -226,23 +279,28 @@ export const JobsView: React.FC<JobsViewProps> = ({
     }
   });
 
-  const handleReorder = (jobId: string, direction: 'up' | 'down') => {
+  const handleReorder = (
+    jobId: string,
+    direction: 'up' | 'down',
+    scopedJobIds?: string[]
+  ) => {
     if (!canReorder) return;
     if (sortCriteria !== 'operator_order') {
       setSortCriteria('operator_order');
     }
-    const res = reorderWorkOrder(jobId, direction);
+    const res = reorderWorkOrder(jobId, direction, scopedJobIds);
     if (res.success) {
       setFeedbackNotice(
         direction === 'up'
-          ? 'Prioridad del trabajo aumentada (orden de operario actualizado)'
-          : 'Posición del trabajo reducida (orden de operario actualizado)'
+          ? 'Prioridad del trabajo aumentada (orden personalizado actualizado)'
+          : 'Posición del trabajo reducida (orden personalizado actualizado)'
       );
       setTimeout(() => setFeedbackNotice(null), 3000);
     }
   };
 
   const handleResetToDate = () => {
+    if (!canReorder) return;
     resetWorkOrdersOrderToDate();
     setSortCriteria('date');
     setDateDirection('desc');
@@ -827,7 +885,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
               }`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>Criterio del Operario</span>
+              <span>Orden Personalizado</span>
             </button>
           </div>
         </div>
@@ -846,10 +904,10 @@ export const JobsView: React.FC<JobsViewProps> = ({
                   : 'Más antiguas primero'}
               </span>
             </button>
-          ) : (
+          ) : canReorder ? (
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-graphite-500 font-medium hidden lg:inline">
-                Flechas ↑ y ↓ en cada orden para ajustar prioridad
+                Arrastra cualquier orden a la posición deseada (o usa ↑ / ↓)
               </span>
               <button
                 type="button"
@@ -861,6 +919,10 @@ export const JobsView: React.FC<JobsViewProps> = ({
                 <span>Restablecer a fecha</span>
               </button>
             </div>
+          ) : (
+            <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg font-medium">
+              Modo consulta (solo lectura)
+            </span>
           )}
         </div>
       </div>
@@ -1114,11 +1176,19 @@ export const JobsView: React.FC<JobsViewProps> = ({
                         assignedOp?.name,
                         assignedOp?.color
                       );
+                      const colScopeId = `sheet-${columnGroupBy}-${col.id}`;
+                      const colJobIds = col.jobs.map((j) => j.id);
+                      const isDraggingThis = draggedJobId === job.id;
+                      const dropIndicator = getDropIndicator(job.id, colScopeId);
 
                       return (
                         <td
                           key={col.id}
-                          onClick={() => onOpenJobDetail(job)}
+                          {...getDragItemProps(job, colScopeId, colJobIds, rowIndex)}
+                          onClick={() => {
+                            if (shouldSuppressClick()) return;
+                            onOpenJobDetail(job);
+                          }}
                           tabIndex={0}
                           role="button"
                           onKeyDown={(e) => {
@@ -1127,10 +1197,18 @@ export const JobsView: React.FC<JobsViewProps> = ({
                               onOpenJobDetail(job);
                             }
                           }}
-                          className={`border-r border-b border-graphite-300 transition-all cursor-pointer relative group focus:outline-hidden focus:ring-2 focus:ring-oterio-500 hover:z-10 ${
-                            isCompact ? 'p-2' : 'p-2.5'
-                          } ${
-                            status?.isCompleted
+                          className={`border-r border-b border-graphite-300 transition-all relative group focus:outline-hidden focus:ring-2 focus:ring-oterio-500 hover:z-10 ${
+                            canReorder && colJobIds.length > 1
+                              ? 'cursor-grab active:cursor-grabbing'
+                              : 'cursor-pointer'
+                          } ${isCompact ? 'p-2' : 'p-2.5'} ${
+                            isDraggingThis
+                              ? 'opacity-45 bg-oterio-50/70 ring-2 ring-oterio-400'
+                              : dropIndicator === 'before'
+                              ? 'bg-oterio-50/80 ring-2 ring-oterio-500 shadow-[inset_0_4px_0_0_#ea580c] z-10'
+                              : dropIndicator === 'after'
+                              ? 'bg-oterio-50/80 ring-2 ring-oterio-500 shadow-[inset_0_-4px_0_0_#ea580c] z-10'
+                              : status?.isCompleted
                               ? 'bg-emerald-50/35 hover:bg-emerald-50/75 hover:ring-2 hover:ring-emerald-400'
                               : job.isUrgent
                               ? 'bg-rose-50/30 hover:bg-rose-50/80 hover:ring-2 hover:ring-rose-400'
@@ -1139,9 +1217,19 @@ export const JobsView: React.FC<JobsViewProps> = ({
                         >
                           {/* SPREADSHEET CELL CONTENT (MINIMAL INFO) */}
                           <div className="flex flex-col gap-1">
-                            {/* Line 1: OT Tag & Urgent / Status indicators */}
+                            {/* Line 1: Drag Handle + OT Tag & Urgent / Status indicators */}
                             <div className="flex items-center justify-between gap-1">
                               <div className="flex items-center gap-1 min-w-0">
+                                {canReorder && colJobIds.length > 1 && (
+                                  <span
+                                    {...getTouchHandleProps(job, colScopeId, colJobIds, rowIndex)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    title="Arrastra para cambiar de posición"
+                                    className="touch-none p-0.5 -ml-0.5 text-graphite-400 hover:text-oterio-600 cursor-grab active:cursor-grabbing shrink-0"
+                                  >
+                                    <GripVertical className="w-3 h-3" />
+                                  </span>
+                                )}
                                 <span className="font-mono text-[11px] font-bold text-graphite-900 bg-graphite-100 px-1.5 py-0.2 rounded border border-graphite-200 shrink-0">
                                   {job.ot}
                                 </span>
@@ -1246,29 +1334,43 @@ export const JobsView: React.FC<JobsViewProps> = ({
                                     <span className="truncate">{deptName}</span>
                                   </span>
 
-                                  {/* Operator reposition arrow if in operator order mode */}
-                                  {canReorder && sortCriteria === 'operator_order' && (
+                                  {/* Custom priority reposition arrows (all roles except solo_lectura) */}
+                                  {canReorder && col.jobs.length > 1 && (
                                     <div
-                                      className="opacity-0 group-hover:opacity-100 flex items-center bg-white border border-graphite-200 rounded p-0.5 shadow-2xs transition-opacity"
+                                      className="opacity-100 sm:opacity-75 sm:group-hover:opacity-100 flex items-center bg-white border border-graphite-200 rounded p-0.5 shadow-2xs transition-opacity shrink-0"
                                       onClick={(e) => e.stopPropagation()}
                                     >
                                       <button
                                         type="button"
                                         disabled={rowIndex === 0}
-                                        onClick={() => handleReorder(job.id, 'up')}
+                                        onClick={() =>
+                                          handleReorder(
+                                            job.id,
+                                            'up',
+                                            col.jobs.map((j) => j.id)
+                                          )
+                                        }
                                         title="Subir prioridad"
-                                        className="p-0.5 text-graphite-500 hover:text-oterio-600 disabled:opacity-20 cursor-pointer"
+                                        aria-label={`Subir prioridad de ${job.ot}`}
+                                        className="p-0.5 text-graphite-600 hover:text-oterio-600 hover:bg-oterio-50 rounded disabled:opacity-20 cursor-pointer"
                                       >
-                                        <ChevronUp className="w-2.5 h-2.5" />
+                                        <ChevronUp className="w-3 h-3" />
                                       </button>
                                       <button
                                         type="button"
                                         disabled={rowIndex === col.jobs.length - 1}
-                                        onClick={() => handleReorder(job.id, 'down')}
+                                        onClick={() =>
+                                          handleReorder(
+                                            job.id,
+                                            'down',
+                                            col.jobs.map((j) => j.id)
+                                          )
+                                        }
                                         title="Bajar prioridad"
-                                        className="p-0.5 text-graphite-500 hover:text-oterio-600 disabled:opacity-20 cursor-pointer"
+                                        aria-label={`Bajar prioridad de ${job.ot}`}
+                                        className="p-0.5 text-graphite-600 hover:text-oterio-600 hover:bg-oterio-50 rounded disabled:opacity-20 cursor-pointer"
                                       >
-                                        <ChevronDown className="w-2.5 h-2.5" />
+                                        <ChevronDown className="w-3 h-3" />
                                       </button>
                                     </div>
                                   )}
@@ -1296,29 +1398,43 @@ export const JobsView: React.FC<JobsViewProps> = ({
                                     </span>
                                   </span>
 
-                                  {/* Operator reposition arrow if in operator order mode */}
-                                  {canReorder && sortCriteria === 'operator_order' && (
+                                  {/* Custom priority reposition arrows (all roles except solo_lectura) */}
+                                  {canReorder && col.jobs.length > 1 && (
                                     <div
-                                      className="opacity-0 group-hover:opacity-100 flex items-center bg-white border border-graphite-200 rounded p-0.5 shadow-2xs transition-opacity"
+                                      className="opacity-100 sm:opacity-75 sm:group-hover:opacity-100 flex items-center bg-white border border-graphite-200 rounded p-0.5 shadow-2xs transition-opacity shrink-0"
                                       onClick={(e) => e.stopPropagation()}
                                     >
                                       <button
                                         type="button"
                                         disabled={rowIndex === 0}
-                                        onClick={() => handleReorder(job.id, 'up')}
+                                        onClick={() =>
+                                          handleReorder(
+                                            job.id,
+                                            'up',
+                                            col.jobs.map((j) => j.id)
+                                          )
+                                        }
                                         title="Subir prioridad"
-                                        className="p-0.5 text-graphite-500 hover:text-oterio-600 disabled:opacity-20 cursor-pointer"
+                                        aria-label={`Subir prioridad de ${job.ot}`}
+                                        className="p-0.5 text-graphite-600 hover:text-oterio-600 hover:bg-oterio-50 rounded disabled:opacity-20 cursor-pointer"
                                       >
-                                        <ChevronUp className="w-2.5 h-2.5" />
+                                        <ChevronUp className="w-3 h-3" />
                                       </button>
                                       <button
                                         type="button"
                                         disabled={rowIndex === col.jobs.length - 1}
-                                        onClick={() => handleReorder(job.id, 'down')}
+                                        onClick={() =>
+                                          handleReorder(
+                                            job.id,
+                                            'down',
+                                            col.jobs.map((j) => j.id)
+                                          )
+                                        }
                                         title="Bajar prioridad"
-                                        className="p-0.5 text-graphite-500 hover:text-oterio-600 disabled:opacity-20 cursor-pointer"
+                                        aria-label={`Bajar prioridad de ${job.ot}`}
+                                        className="p-0.5 text-graphite-600 hover:text-oterio-600 hover:bg-oterio-50 rounded disabled:opacity-20 cursor-pointer"
                                       >
-                                        <ChevronDown className="w-2.5 h-2.5" />
+                                        <ChevronDown className="w-3 h-3" />
                                       </button>
                                     </div>
                                   )}
@@ -1377,15 +1493,51 @@ export const JobsView: React.FC<JobsViewProps> = ({
               assignedOp?.color
             );
 
+            const gridScopeId = 'jobs-grid';
+            const gridJobIds = sortedJobs.map((j) => j.id);
+            const isDraggingThis = draggedJobId === job.id;
+            const dropIndicator = getDropIndicator(job.id, gridScopeId);
+
             return (
               <div
                 key={job.id}
-                onClick={() => onOpenJobDetail(job)}
-                className="group relative bg-white border border-graphite-200/90 rounded-2xl p-5 shadow-xs hover:shadow-md hover:border-oterio-300 transition-all cursor-pointer flex flex-col justify-between"
+                {...getDragItemProps(job, gridScopeId, gridJobIds, index)}
+                onClick={() => {
+                  if (shouldSuppressClick()) return;
+                  onOpenJobDetail(job);
+                }}
+                className={`group relative bg-white border rounded-2xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between ${
+                  canReorder && gridJobIds.length > 1
+                    ? 'cursor-grab active:cursor-grabbing'
+                    : 'cursor-pointer'
+                } ${
+                  isDraggingThis
+                    ? 'opacity-45 border-dashed border-oterio-400 ring-2 ring-oterio-300 scale-[0.98]'
+                    : dropIndicator
+                    ? 'border-oterio-500 ring-2 ring-oterio-500 bg-oterio-50/40'
+                    : 'border-graphite-200/90 hover:border-oterio-300'
+                }`}
               >
+                {dropIndicator && (
+                  <div
+                    className={`pointer-events-none absolute left-3 right-3 h-1 rounded-full bg-oterio-600 ${
+                      dropIndicator === 'before' ? '-top-1' : '-bottom-1'
+                    }`}
+                  />
+                )}
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2">
+                      {canReorder && gridJobIds.length > 1 && (
+                        <span
+                          {...getTouchHandleProps(job, gridScopeId, gridJobIds, index)}
+                          onClick={(e) => e.stopPropagation()}
+                          title="Arrastra para mover a otra posición"
+                          className="touch-none p-1 -ml-1 rounded-md text-graphite-400 hover:text-oterio-600 hover:bg-oterio-50 cursor-grab active:cursor-grabbing shrink-0"
+                        >
+                          <GripVertical className="w-4 h-4" />
+                        </span>
+                      )}
                       <span className="font-mono text-sm font-bold text-graphite-900 bg-graphite-100 px-2.5 py-1 rounded-lg">
                         {job.ot}
                       </span>
@@ -1420,8 +1572,15 @@ export const JobsView: React.FC<JobsViewProps> = ({
                           <button
                             type="button"
                             disabled={index === 0}
-                            onClick={() => handleReorder(job.id, 'up')}
+                            onClick={() =>
+                              handleReorder(
+                                job.id,
+                                'up',
+                                sortedJobs.map((j) => j.id)
+                              )
+                            }
                             title="Subir prioridad"
+                            aria-label={`Subir prioridad de ${job.ot}`}
                             className="p-1 rounded text-graphite-600 hover:text-oterio-600 hover:bg-white disabled:opacity-20 cursor-pointer"
                           >
                             <ChevronUp className="w-3.5 h-3.5" />
@@ -1429,8 +1588,15 @@ export const JobsView: React.FC<JobsViewProps> = ({
                           <button
                             type="button"
                             disabled={index === sortedJobs.length - 1}
-                            onClick={() => handleReorder(job.id, 'down')}
+                            onClick={() =>
+                              handleReorder(
+                                job.id,
+                                'down',
+                                sortedJobs.map((j) => j.id)
+                              )
+                            }
                             title="Bajar prioridad"
+                            aria-label={`Bajar prioridad de ${job.ot}`}
                             className="p-1 rounded text-graphite-600 hover:text-oterio-600 hover:bg-white disabled:opacity-20 cursor-pointer"
                           >
                             <ChevronDown className="w-3.5 h-3.5" />
@@ -1597,11 +1763,32 @@ export const JobsView: React.FC<JobsViewProps> = ({
                     assignedOp?.color
                   );
 
+                  const tableScopeId = 'jobs-table';
+                  const tableJobIds = sortedJobs.map((j) => j.id);
+                  const isDraggingThis = draggedJobId === job.id;
+                  const dropIndicator = getDropIndicator(job.id, tableScopeId);
+
                   return (
                     <tr
                       key={job.id}
-                      onClick={() => onOpenJobDetail(job)}
-                      className="hover:bg-graphite-50/80 cursor-pointer transition-colors"
+                      {...getDragItemProps(job, tableScopeId, tableJobIds, index)}
+                      onClick={() => {
+                        if (shouldSuppressClick()) return;
+                        onOpenJobDetail(job);
+                      }}
+                      className={`transition-colors ${
+                        canReorder && tableJobIds.length > 1
+                          ? 'cursor-grab active:cursor-grabbing'
+                          : 'cursor-pointer'
+                      } ${
+                        isDraggingThis
+                          ? 'opacity-45 bg-oterio-50/70'
+                          : dropIndicator === 'before'
+                          ? 'bg-oterio-50/80 shadow-[inset_0_3px_0_0_#ea580c]'
+                          : dropIndicator === 'after'
+                          ? 'bg-oterio-50/80 shadow-[inset_0_-3px_0_0_#ea580c]'
+                          : 'hover:bg-graphite-50/80'
+                      }`}
                     >
                       {canReorder && (
                         <td
@@ -1609,14 +1796,30 @@ export const JobsView: React.FC<JobsViewProps> = ({
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="inline-flex items-center gap-1 bg-graphite-50 px-1 py-0.5 rounded-lg border border-graphite-200">
+                            {tableJobIds.length > 1 && (
+                              <span
+                                {...getTouchHandleProps(job, tableScopeId, tableJobIds, index)}
+                                title="Arrastra para mover a otra posición"
+                                className="touch-none p-0.5 text-graphite-400 hover:text-oterio-600 cursor-grab active:cursor-grabbing"
+                              >
+                                <GripVertical className="w-3.5 h-3.5" />
+                              </span>
+                            )}
                             <span className="font-mono text-[10px] font-bold text-graphite-500 px-1 tabular-nums">
                               #{index + 1}
                             </span>
                             <button
                               type="button"
                               disabled={index === 0}
-                              onClick={() => handleReorder(job.id, 'up')}
+                              onClick={() =>
+                                handleReorder(
+                                  job.id,
+                                  'up',
+                                  sortedJobs.map((j) => j.id)
+                                )
+                              }
                               title="Subir posición"
+                              aria-label={`Subir prioridad de ${job.ot}`}
                               className="p-0.5 rounded text-graphite-600 hover:text-oterio-600 hover:bg-white disabled:opacity-20 cursor-pointer"
                             >
                               <ChevronUp className="w-3 h-3" />
@@ -1624,8 +1827,15 @@ export const JobsView: React.FC<JobsViewProps> = ({
                             <button
                               type="button"
                               disabled={index === sortedJobs.length - 1}
-                              onClick={() => handleReorder(job.id, 'down')}
+                              onClick={() =>
+                                handleReorder(
+                                  job.id,
+                                  'down',
+                                  sortedJobs.map((j) => j.id)
+                                )
+                              }
                               title="Bajar posición"
+                              aria-label={`Bajar prioridad de ${job.ot}`}
                               className="p-0.5 rounded text-graphite-600 hover:text-oterio-600 hover:bg-white disabled:opacity-20 cursor-pointer"
                             >
                               <ChevronDown className="w-3 h-3" />
@@ -1782,6 +1992,17 @@ export const JobsView: React.FC<JobsViewProps> = ({
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Floating touch drag preview pill for mobile/tablet */}
+      {touchPreview && (
+        <div
+          className="fixed z-50 pointer-events-none -translate-x-1/2 -translate-y-full px-3 py-1.5 rounded-xl bg-oterio-600 text-white text-xs font-bold shadow-lg border border-oterio-400 flex items-center gap-1.5"
+          style={{ left: touchPreview.x, top: Math.max(24, touchPreview.y - 14) }}
+        >
+          <GripVertical className="w-3.5 h-3.5 opacity-80" />
+          <span className="truncate max-w-[220px]">{touchPreview.label}</span>
         </div>
       )}
 
