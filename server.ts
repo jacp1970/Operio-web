@@ -17,7 +17,10 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 function getGeminiClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey =
+    process.env.VITE_GEMINI_API_KEY?.trim() ||
+    process.env.API_KEY?.trim() ||
+    process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error('MISSING_GEMINI_API_KEY');
   }
@@ -267,41 +270,49 @@ Si algún campo de texto o fecha no aparece en el documento, devuelve null.`,
 function handleGeminiRouteError(err: any, res: express.Response, sourceLabel: string) {
   console.error(`Gemini ${sourceLabel} extraction error:`, err);
 
+  const rawMsg = String(err?.message || err || 'Error desconocido');
+
   if (err?.message === 'MISSING_GEMINI_API_KEY') {
     return res.status(500).json({
-      error: 'No está configurada la clave de API de Gemini en el servidor (Settings > Secrets).',
+      code: 'MISSING_GEMINI_API_KEY',
+      error: 'Falta configurar la API Key de Gemini',
+      technicalError: 'MISSING_GEMINI_API_KEY: No se encontró GEMINI_API_KEY ni API_KEY en el entorno.',
     });
   }
 
   if (err?.message === 'EMPTY_AI_RESPONSE') {
     return res.status(502).json({
       error: `La IA no devolvió datos legibles para ${sourceLabel}. Puedes completar los campos manualmente.`,
+      technicalError: rawMsg,
     });
   }
 
   if (err?.message === 'INVALID_AI_JSON') {
     return res.status(502).json({
       error: 'No se pudo interpretar la respuesta estructurada de la IA. Revisa o completa los datos manualmente.',
+      technicalError: rawMsg,
     });
   }
 
   const statusCode = err?.status || err?.code;
-  const rawMsg = String(err?.message || '');
 
   if (statusCode === 403 || rawMsg.includes('PERMISSION_DENIED') || rawMsg.includes('API_KEY_INVALID')) {
     return res.status(403).json({
-      error: 'La clave de API de Gemini no es válida o no tiene permisos. Verifica tu clave en Settings > Secrets.',
+      error: 'La clave de API de Gemini no es válida o no tiene permisos.',
+      technicalError: rawMsg,
     });
   }
 
   if (statusCode === 429 || rawMsg.includes('RESOURCE_EXHAUSTED')) {
     return res.status(429).json({
       error: 'Se ha superado temporalmente la cuota de peticiones de la IA. Inténtalo de nuevo en unos segundos.',
+      technicalError: rawMsg,
     });
   }
 
   return res.status(500).json({
     error: `Ocurrió un error al analizar ${sourceLabel} con Gemini. Puedes rellenar los campos manualmente.`,
+    technicalError: rawMsg,
   });
 }
 

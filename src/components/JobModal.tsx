@@ -9,6 +9,10 @@ import {
 import { findPendingStatus } from '../utils/statusUtils';
 import { downloadPdfFromDataUrl, readPhotoAsEphemeralBase64 } from '../utils/pdfUtils';
 import {
+  extractWorkOrderFields,
+  WorkOrderExtractionError,
+} from '../utils/geminiWorkOrderExtractor';
+import {
   X,
   FileText,
   Upload,
@@ -96,6 +100,7 @@ export const JobModal: React.FC<JobModalProps> = ({
   const [isResolvingPdf, setIsResolvingPdf] = useState(false);
   const [pdfSuccessNotice, setPdfSuccessNotice] = useState<string | null>(null);
   const [pdfErrorNotice, setPdfErrorNotice] = useState<string | null>(null);
+  const [pdfErrorTechnical, setPdfErrorTechnical] = useState<string | null>(null);
   const [hasAnalyzedPdf, setHasAnalyzedPdf] = useState(false);
 
   // Stopwatch / Cronómetro state
@@ -121,6 +126,7 @@ export const JobModal: React.FC<JobModalProps> = ({
     setIsResolvingPdf(false);
     setPdfSuccessNotice(null);
     setPdfErrorNotice(null);
+    setPdfErrorTechnical(null);
     setHasAnalyzedPdf(false);
     setShowResetConfirm(false);
     setShowSessionsList(false);
@@ -367,42 +373,54 @@ export const JobModal: React.FC<JobModalProps> = ({
     }
   };
 
+  const displayExtractionError = (err: unknown, fallbackMessage: string) => {
+    console.error('Error analyzing work order with Gemini:', err);
+
+    if (err instanceof WorkOrderExtractionError) {
+      setPdfErrorNotice(err.message);
+      setPdfErrorTechnical(err.technicalDetail || err.message);
+    } else {
+      const rawMessage =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string'
+          ? err
+          : String((err as { message?: string })?.message || err || 'Error desconocido');
+
+      setPdfErrorNotice(fallbackMessage);
+      setPdfErrorTechnical(rawMessage);
+    }
+
+    if (modalBodyRef.current) {
+      modalBodyRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   /**
-   * Multimodal PDF Extraction via server-side Gemini Flash API (/api/extract-work-order-pdf)
-   * Populates ONLY the form fields without auto-saving.
+   * Multimodal PDF Extraction via Gemini Flash (supports Vercel Vite env & backend /api route)
+   * Keeps the PDF upload flow intact and populates ONLY the form fields without auto-saving.
    */
   const extractDataFromPdfWithGemini = async (pdfDataUrl: string, fileName: string) => {
     setIsAnalyzingPdf(true);
     setAnalyzingSource('pdf');
     setPdfSuccessNotice(null);
     setPdfErrorNotice(null);
+    setPdfErrorTechnical(null);
     setErrorMessage('');
 
     try {
-      const response = await fetch('/api/extract-work-order-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pdfBase64: pdfDataUrl,
-          fileName,
-        }),
+      const payload = await extractWorkOrderFields({
+        base64Data: pdfDataUrl,
+        mimeType: 'application/pdf',
+        fileName,
+        sourceType: 'pdf',
       });
 
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          payload?.error ||
-            'No se pudo analizar el archivo PDF con Gemini. Puedes completar los campos manualmente.'
-        );
-      }
-
       applyExtractedFieldsToForm(payload, 'pdf');
-    } catch (err: any) {
-      console.error('Error analyzing PDF with Gemini:', err);
-      setPdfErrorNotice(
-        err?.message ||
-          'Ha ocurrido un error al procesar el archivo PDF con IA. Puedes completar los datos manualmente.'
+    } catch (err: unknown) {
+      displayExtractionError(
+        err,
+        'Ha ocurrido un error al procesar el archivo PDF con Gemini. Puedes completar los datos manualmente.'
       );
     } finally {
       setIsAnalyzingPdf(false);
@@ -411,9 +429,9 @@ export const JobModal: React.FC<JobModalProps> = ({
   };
 
   /**
-   * Ephemeral Mobile Photo Extraction via server-side Gemini Flash API (/api/extract-work-order-photo)
-   * Extracts ONLY the work order fields and immediately discards the photo in memory without storing it
-   * in Firestore or localStorage.
+   * Ephemeral Mobile Photo Extraction via Gemini Flash (supports Vercel Vite env & backend /api route)
+   * Compresses the photo via canvas (max 1600px, image/jpeg 0.75), extracts ONLY the work order fields,
+   * and immediately discards the photo in memory without storing it in Firestore or localStorage.
    */
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputEl = e.target;
@@ -432,42 +450,35 @@ export const JobModal: React.FC<JobModalProps> = ({
     setAnalyzingSource('photo');
     setPdfSuccessNotice(null);
     setPdfErrorNotice(null);
+    setPdfErrorTechnical(null);
     setErrorMessage('');
 
+    let ephemeralBase64 = '';
     try {
-      // Read the camera file BEFORE clearing inputEl.value so mobile browsers don't revoke the temp file
+      // Read and compress the camera file BEFORE clearing inputEl.value so mobile browsers don't revoke the temp file
       const ephemeralPhoto = await readPhotoAsEphemeralBase64(file);
+      ephemeralBase64 = ephemeralPhoto.base64;
       inputEl.value = '';
 
-      const response = await fetch('/api/extract-work-order-photo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: ephemeralPhoto.base64,
-          mimeType: ephemeralPhoto.mimeType,
-        }),
+      const payload = await extractWorkOrderFields({
+        base64Data: ephemeralBase64,
+        mimeType: ephemeralPhoto.mimeType,
+        sourceType: 'photo',
       });
 
-      // Overwrite transient string reference immediately after sending
+      // Overwrite transient string references immediately after extraction
       ephemeralPhoto.base64 = '';
-
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          payload?.error ||
-            'No se pudo analizar la fotografía del parte con Gemini. Puedes completar los campos manualmente.'
-        );
-      }
+      ephemeralBase64 = '';
 
       applyExtractedFieldsToForm(payload, 'photo');
-    } catch (err: any) {
-      console.error('Error analyzing photo with Gemini:', err);
-      setPdfErrorNotice(
-        err?.message ||
-          'Ha ocurrido un error al analizar la fotografía con IA. Puedes completar los datos manualmente.'
+    } catch (err: unknown) {
+      ephemeralBase64 = '';
+      displayExtractionError(
+        err,
+        'Ha ocurrido un error al analizar la fotografía con Gemini. Puedes completar los datos manualmente.'
       );
     } finally {
+      ephemeralBase64 = '';
       inputEl.value = '';
       setIsAnalyzingPdf(false);
       setAnalyzingSource(null);
@@ -555,6 +566,7 @@ export const JobModal: React.FC<JobModalProps> = ({
     }
     setPdfSuccessNotice(null);
     setPdfErrorNotice(null);
+    setPdfErrorTechnical(null);
     setHasAnalyzedPdf(false);
   };
 
@@ -792,14 +804,27 @@ export const JobModal: React.FC<JobModalProps> = ({
 
           {pdfErrorNotice && !isAnalyzingPdf && (
             <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 flex items-start justify-between gap-2 text-xs text-rose-800 animate-in fade-in">
-              <div className="flex items-start gap-2">
+              <div className="flex items-start gap-2 min-w-0 flex-1">
                 <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                <span>{pdfErrorNotice}</span>
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <p className="font-bold text-rose-900 break-words">{pdfErrorNotice}</p>
+                  {pdfErrorTechnical && (
+                    <div className="p-2 rounded-lg bg-white/80 border border-rose-200/80 font-mono text-[11px] text-rose-700 break-all whitespace-pre-wrap select-all">
+                      <span className="font-sans font-bold text-[10px] uppercase tracking-wider text-rose-500 block mb-0.5">
+                        Detalle técnico del error:
+                      </span>
+                      {pdfErrorTechnical}
+                    </div>
+                  )}
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setPdfErrorNotice(null)}
-                className="text-rose-600 hover:text-rose-800 cursor-pointer"
+                onClick={() => {
+                  setPdfErrorNotice(null);
+                  setPdfErrorTechnical(null);
+                }}
+                className="text-rose-600 hover:text-rose-800 cursor-pointer shrink-0"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
