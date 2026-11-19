@@ -2,7 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 
 dotenv.config();
 
@@ -74,6 +74,77 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', aiPdfExtraction: true });
 });
 
+function extractRawBase64(input: string): string {
+  const withoutHeader = input.includes(',') ? input.slice(input.indexOf(',') + 1) : input;
+  return withoutHeader.replace(/\s/g, '');
+}
+
+function detectMimeTypeFromBase64(cleanBase64: string, fallbackMimeType: string): string {
+  try {
+    const headerBuf = Buffer.from(cleanBase64.slice(0, 64), 'base64');
+    if (headerBuf.length >= 4) {
+      // JPEG: FF D8 FF
+      if (headerBuf[0] === 0xff && headerBuf[1] === 0xd8 && headerBuf[2] === 0xff) {
+        return 'image/jpeg';
+      }
+      // PNG: 89 50 4E 47
+      if (
+        headerBuf[0] === 0x89 &&
+        headerBuf[1] === 0x50 &&
+        headerBuf[2] === 0x4e &&
+        headerBuf[3] === 0x47
+      ) {
+        return 'image/png';
+      }
+      // PDF: 25 50 44 46 (%PDF)
+      if (
+        headerBuf[0] === 0x25 &&
+        headerBuf[1] === 0x50 &&
+        headerBuf[2] === 0x44 &&
+        headerBuf[3] === 0x46
+      ) {
+        return 'application/pdf';
+      }
+      // WEBP: RIFF....WEBP
+      if (
+        headerBuf.length >= 12 &&
+        headerBuf.subarray(0, 4).toString('ascii') === 'RIFF' &&
+        headerBuf.subarray(8, 12).toString('ascii') === 'WEBP'
+      ) {
+        return 'image/webp';
+      }
+      // HEIC / HEIF (ftyp box at offset 4)
+      if (headerBuf.length >= 12 && headerBuf.subarray(4, 8).toString('ascii') === 'ftyp') {
+        const brand = headerBuf.subarray(8, 12).toString('ascii').toLowerCase();
+        if (brand.startsWith('hei') || brand.startsWith('hevc') || brand.startsWith('hevx')) {
+          return 'image/heic';
+        }
+        if (brand === 'mif1' || brand === 'msf1' || brand.startsWith('heif')) {
+          return 'image/heif';
+        }
+      }
+    }
+  } catch {
+    // Ignore magic-byte parse error and fall back
+  }
+
+  const normalized = (fallbackMimeType || '').trim().toLowerCase();
+  if (
+    normalized === 'image/jpeg' ||
+    normalized === 'image/png' ||
+    normalized === 'image/webp' ||
+    normalized === 'image/heic' ||
+    normalized === 'image/heif' ||
+    normalized === 'application/pdf'
+  ) {
+    return normalized;
+  }
+  if (normalized === 'image/jpg') {
+    return 'image/jpeg';
+  }
+  return 'image/jpeg';
+}
+
 interface ExtractedWorkOrderFields {
   ot: string | null;
   client: string | null;
@@ -121,6 +192,7 @@ Si algún campo de texto o fecha no aparece en el documento, devuelve null.`,
     model: 'gemini-4-hydrogen',
     contents: { parts: [mediaPart, textPart] },
     config: {
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       systemInstruction:
         'Eres un asistente especializado en digitalización de órdenes de trabajo y partes técnicos industriales en español (incluidos documentos PDF, planos y fotografías tomadas con el móvil de partes impresos o manuscritos). Extraes únicamente los 6 campos solicitados sin inventar datos ni deducir fechas ausentes. Cuando un dato de texto o fecha no figure explícitamente, devuelves null; y en isUrgent devuelves true solo si el documento indica urgencia o prioridad alta.',
       responseMimeType: 'application/json',
@@ -176,7 +248,8 @@ Si algún campo de texto o fecha no aparece en el documento, devuelve null.`,
 
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(rawText);
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
   } catch {
     throw new Error('INVALID_AI_JSON');
   }
@@ -243,7 +316,7 @@ app.post('/api/extract-work-order-pdf', async (req, res) => {
       });
     }
 
-    const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/i, '').trim();
+    const cleanBase64 = extractRawBase64(pdfBase64);
     if (!cleanBase64) {
       return res.status(400).json({
         error: 'El archivo PDF está vacío o corrupto.',
@@ -275,21 +348,21 @@ app.post('/api/extract-work-order-photo', async (req, res) => {
       });
     }
 
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/i, '').trim();
+    const cleanBase64 = extractRawBase64(imageBase64);
     if (!cleanBase64) {
       return res.status(400).json({
         error: 'La fotografía recibida está vacía o no tiene un formato válido.',
       });
     }
 
-    const validMimeType =
-      typeof mimeType === 'string' && mimeType.startsWith('image/')
-        ? mimeType
-        : 'image/jpeg';
+    const resolvedMimeType = detectMimeTypeFromBase64(
+      cleanBase64,
+      typeof mimeType === 'string' ? mimeType : 'image/jpeg'
+    );
 
     const result = await extractWorkOrderWithGemini({
       base64Data: cleanBase64,
-      mimeType: validMimeType,
+      mimeType: resolvedMimeType,
       sourceType: 'photo',
     });
 

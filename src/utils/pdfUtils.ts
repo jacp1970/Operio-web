@@ -39,74 +39,97 @@ export function downloadPdfFromDataUrl(dataUrl: string, fileName: string): void 
 
 /**
  * Reads an image file (e.g., from a mobile camera capture) into an ephemeral
- * in-memory Base64 JPEG string, scaling it down if needed for fast AI analysis,
- * and immediately revoking all temporary DOM/Blob resources so nothing is stored locally.
+ * in-memory Base64 string. Reads the file bytes with FileReader first so mobile
+ * temporary camera captures are never lost, then downscales via an offscreen canvas
+ * (falling back to the raw data URL for formats like HEIC that canvas cannot decode).
  */
 export function readPhotoAsEphemeralBase64(
   file: File
 ): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
-    const tempObjectUrl = URL.createObjectURL(file);
-    const img = new Image();
+    const reader = new FileReader();
 
-    img.onload = () => {
-      try {
-        URL.revokeObjectURL(tempObjectUrl);
-        const MAX_DIMENSION = 2000;
-        let width = img.naturalWidth || img.width;
-        let height = img.naturalHeight || img.height;
+    reader.onerror = () => {
+      reject(new Error('No se pudo leer la fotografía capturada desde la cámara.'));
+    };
 
-        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
-          if (width >= height) {
-            height = Math.round((height * MAX_DIMENSION) / width);
-            width = MAX_DIMENSION;
-          } else {
-            width = Math.round((width * MAX_DIMENSION) / height);
-            height = MAX_DIMENSION;
+    reader.onload = () => {
+      const rawDataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!rawDataUrl) {
+        reject(new Error('La fotografía capturada está vacía.'));
+        return;
+      }
+
+      const fallbackMime =
+        file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
+
+      const img = new Image();
+
+      img.onload = () => {
+        try {
+          const MAX_DIMENSION = 1400;
+          let width = img.naturalWidth || img.width;
+          let height = img.naturalHeight || img.height;
+
+          if (!width || !height) {
+            resolve({ base64: rawDataUrl, mimeType: fallbackMime });
+            return;
           }
-        }
 
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+          if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+            if (width >= height) {
+              height = Math.round((height * MAX_DIMENSION) / width);
+              width = MAX_DIMENSION;
+            } else {
+              width = Math.round((width * MAX_DIMENSION) / height);
+              height = MAX_DIMENSION;
+            }
+          }
 
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            canvas.width = 0;
+            canvas.height = 0;
+            resolve({ base64: rawDataUrl, mimeType: fallbackMime });
+            return;
+          }
+
+          // Fill white background in case of transparent PNG
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+
+          // Release canvas memory after encoding completes
           canvas.width = 0;
           canvas.height = 0;
-          reject(new Error('No se pudo procesar la imagen en memoria.'));
-          return;
+          img.src = '';
+
+          if (compressedDataUrl && compressedDataUrl.length > 64) {
+            resolve({ base64: compressedDataUrl, mimeType: 'image/jpeg' });
+          } else {
+            resolve({ base64: rawDataUrl, mimeType: fallbackMime });
+          }
+        } catch {
+          // If canvas encoding fails on mobile, send the raw data URL already in memory
+          resolve({ base64: rawDataUrl, mimeType: fallbackMime });
         }
+      };
 
-        ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+      img.onerror = () => {
+        // Browser couldn't decode image onto canvas (e.g. raw HEIC/HEIF on Android/Desktop);
+        // send the raw DataURL so Gemini can process it directly on the server.
+        resolve({ base64: rawDataUrl, mimeType: fallbackMime });
+      };
 
-        // Immediately release canvas memory
-        canvas.width = 0;
-        canvas.height = 0;
-
-        resolve({ base64: dataUrl, mimeType: 'image/jpeg' });
-      } catch (err) {
-        reject(err);
-      }
+      img.src = rawDataUrl;
     };
 
-    img.onerror = () => {
-      URL.revokeObjectURL(tempObjectUrl);
-      // Fallback to transient FileReader in memory
-      const reader = new FileReader();
-      reader.onload = () => {
-        resolve({
-          base64: String(reader.result || ''),
-          mimeType: file.type || 'image/jpeg',
-        });
-      };
-      reader.onerror = () => {
-        reject(new Error('No se pudo leer la fotografía capturada.'));
-      };
-      reader.readAsDataURL(file);
-    };
-
-    img.src = tempObjectUrl;
+    reader.readAsDataURL(file);
   });
 }

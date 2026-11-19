@@ -416,13 +416,15 @@ export const JobModal: React.FC<JobModalProps> = ({
    * in Firestore or localStorage.
    */
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    // Reset input immediately so the file reference is not retained in the DOM input
-    e.target.value = '';
+    const inputEl = e.target;
+    const file = inputEl.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      setErrorMessage('Por favor, toma o selecciona una fotografía válida del parte de trabajo.');
+    const lowerName = (file.name || '').toLowerCase();
+    const isPdf = file.type === 'application/pdf' || lowerName.endsWith('.pdf');
+    if (isPdf) {
+      inputEl.value = '';
+      setErrorMessage('Has seleccionado un PDF. Para fotografías usa la cámara o selecciona una imagen.');
       return;
     }
 
@@ -433,7 +435,9 @@ export const JobModal: React.FC<JobModalProps> = ({
     setErrorMessage('');
 
     try {
+      // Read the camera file BEFORE clearing inputEl.value so mobile browsers don't revoke the temp file
       const ephemeralPhoto = await readPhotoAsEphemeralBase64(file);
+      inputEl.value = '';
 
       const response = await fetch('/api/extract-work-order-photo', {
         method: 'POST',
@@ -464,6 +468,7 @@ export const JobModal: React.FC<JobModalProps> = ({
           'Ha ocurrido un error al analizar la fotografía con IA. Puedes completar los datos manualmente.'
       );
     } finally {
+      inputEl.value = '';
       setIsAnalyzingPdf(false);
       setAnalyzingSource(null);
     }
