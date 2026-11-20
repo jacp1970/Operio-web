@@ -2,7 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 dotenv.config();
 
@@ -157,6 +157,80 @@ interface ExtractedWorkOrderFields {
   isUrgent: boolean;
 }
 
+const PRIMARY_GEMINI_MODEL = 'gemini-2.5-flash';
+const FALLBACK_GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite'] as const;
+const MAX_RETRIES_ON_TRANSIENT = 3;
+const RETRY_DELAY_MS = 2000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryable503Or429(err: any): boolean {
+  const status = err?.status || err?.code || err?.statusCode;
+  if (status === 503 || status === 429) return true;
+  const msg = String(err?.message || err || '').toUpperCase();
+  return (
+    msg.includes('503') ||
+    msg.includes('429') ||
+    msg.includes('UNAVAILABLE') ||
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    msg.includes('HIGH DEMAND') ||
+    msg.includes('OVERLOADED') ||
+    msg.includes('TOO MANY REQUESTS')
+  );
+}
+
+async function generateWithRetryAndFallback(
+  ai: GoogleGenAI,
+  requestParams: {
+    contents: { parts: Array<Record<string, unknown>> };
+    config: Record<string, unknown>;
+  }
+) {
+  let lastError: any;
+
+  // 1. Primary model (gemini-2.5-flash) with up to 3 automatic retries waiting 2s on 503 / 429
+  for (let attempt = 0; attempt <= MAX_RETRIES_ON_TRANSIENT; attempt++) {
+    try {
+      return await ai.models.generateContent({
+        model: PRIMARY_GEMINI_MODEL,
+        contents: requestParams.contents,
+        config: requestParams.config,
+      });
+    } catch (err: any) {
+      lastError = err;
+      if (!isRetryable503Or429(err)) {
+        throw err;
+      }
+      if (attempt < MAX_RETRIES_ON_TRANSIENT) {
+        console.warn(
+          `[Server Gemini] Error 503/429 con ${PRIMARY_GEMINI_MODEL}. Reintentando (${attempt + 1}/${MAX_RETRIES_ON_TRANSIENT}) en ${RETRY_DELAY_MS}ms...`
+        );
+        await sleep(RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  // 2. Final attempt with backup fallback model (gemini-2.5-flash-lite)
+  for (const fallbackModel of FALLBACK_GEMINI_MODELS) {
+    try {
+      console.warn(
+        `[Server Gemini] ${PRIMARY_GEMINI_MODEL} falló tras ${MAX_RETRIES_ON_TRANSIENT} reintentos. Probando modelo de respaldo ${fallbackModel}...`
+      );
+      return await ai.models.generateContent({
+        model: fallbackModel,
+        contents: requestParams.contents,
+        config: requestParams.config,
+      });
+    } catch (fallbackErr: any) {
+      lastError = fallbackErr;
+    }
+  }
+
+  throw lastError;
+}
+
 async function extractWorkOrderWithGemini(params: {
   base64Data: string;
   mimeType: string;
@@ -191,11 +265,9 @@ Extrae EXCLUSIVAMENTE estos 6 campos en JSON estricto siguiendo el esquema:
 Si algún campo de texto o fecha no aparece en el documento, devuelve null.`,
   };
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-4-hydrogen',
+  const response = await generateWithRetryAndFallback(ai, {
     contents: { parts: [mediaPart, textPart] },
     config: {
-      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       systemInstruction:
         'Eres un asistente especializado en digitalización de órdenes de trabajo y partes técnicos industriales en español (incluidos documentos PDF, planos y fotografías tomadas con el móvil de partes impresos o manuscritos). Extraes únicamente los 6 campos solicitados sin inventar datos ni deducir fechas ausentes. Cuando un dato de texto o fecha no figure explícitamente, devuelves null; y en isUrgent devuelves true solo si el documento indica urgencia o prioridad alta.',
       responseMimeType: 'application/json',

@@ -24,11 +24,13 @@ import {
   SlidersHorizontal,
   RotateCcw,
   GripVertical,
+  Download,
 } from 'lucide-react';
 import { getDepartmentColor, getOperatorColor } from '../utils/colorUtils';
 import { formatSecondsToHuman } from '../utils/timeUtils';
 import { ConfirmModal } from './ConfirmModal';
 import { useWorkOrderDragDrop } from '../hooks/useWorkOrderDragDrop';
+import { generateAndDownloadUserJobsPdf } from '../utils/userJobsPdfGenerator';
 
 interface DashboardViewProps {
   onOpenJobDetail: (job: WorkOrder) => void;
@@ -706,7 +708,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 text-xs">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
                           <span className="px-2.5 py-1 rounded-lg bg-oterio-50 text-oterio-700 font-semibold">
                             {opJobs.length} activos
                           </span>
@@ -720,6 +722,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                               {opAlertsCount} con alerta
                             </span>
                           )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              generateAndDownloadUserJobsPdf({
+                                user: op,
+                                companyName: currentCompany?.name,
+                                companyCode: currentCompany?.code,
+                                jobs: opJobs,
+                                getDepartmentName,
+                              })
+                            }
+                            title={`Descargar PDF con los trabajos asignados a ${op.name}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-graphite-900 hover:bg-oterio-600 text-white font-bold transition-colors cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Descargar PDF</span>
+                          </button>
                         </div>
                       </div>
 
@@ -885,6 +904,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 : 'Revisa tus órdenes asignadas, consulta especificaciones, actualiza notas o añade alertas técnicas.'}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() =>
+              generateAndDownloadUserJobsPdf({
+                user: currentUser,
+                companyName: currentCompany?.name,
+                companyCode: currentCompany?.code,
+                jobs: myActiveJobs,
+                getDepartmentName,
+              })
+            }
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-graphite-900 hover:bg-oterio-600 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer shrink-0 self-start sm:self-center"
+          >
+            <Download className="w-4 h-4" />
+            <span>Descargar PDF de mis trabajos ({myActiveJobs.length})</span>
+          </button>
         </div>
 
         {feedbackBanner && (

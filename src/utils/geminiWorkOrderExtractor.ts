@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 export interface ExtractedWorkOrderFields {
   ot: string | null;
@@ -20,6 +20,45 @@ export class WorkOrderExtractionError extends Error {
 }
 
 export const MISSING_API_KEY_MESSAGE = 'Falta configurar la API Key de Gemini';
+
+export const PRIMARY_GEMINI_MODEL = 'gemini-2.5-flash';
+export const FALLBACK_GEMINI_MODELS = [
+  'gemini-2.5-flash-lite',
+  'gemini-3.1-flash-lite',
+] as const;
+
+const MAX_RETRIES_ON_TRANSIENT = 3;
+const RETRY_DELAY_MS = 2000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrorStatusCode(err: unknown): number | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const e = err as Record<string, unknown>;
+  if (typeof e.status === 'number') return e.status;
+  if (typeof e.code === 'number') return e.code;
+  if (typeof e.statusCode === 'number') return e.statusCode;
+  return undefined;
+}
+
+function isRetryable503Or429(err: unknown): boolean {
+  const status = getErrorStatusCode(err);
+  if (status === 503 || status === 429) return true;
+  const msg = String(
+    err instanceof Error ? err.message : (err as { message?: string })?.message || err || ''
+  ).toUpperCase();
+  return (
+    msg.includes('503') ||
+    msg.includes('429') ||
+    msg.includes('UNAVAILABLE') ||
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    msg.includes('HIGH DEMAND') ||
+    msg.includes('OVERLOADED') ||
+    msg.includes('TOO MANY REQUESTS')
+  );
+}
 
 /**
  * Resolves the Gemini API key in the browser following the required precedence:
@@ -111,6 +150,56 @@ function normalizeTextField(value: unknown): string | null {
   return trimmed;
 }
 
+async function generateWithRetryAndFallback(
+  ai: GoogleGenAI,
+  requestParams: {
+    contents: { parts: Array<Record<string, unknown>> };
+    config: Record<string, unknown>;
+  }
+) {
+  let lastError: unknown;
+
+  // 1. Try primary model (gemini-2.5-flash) with up to 3 automatic retries on 503 / 429 (waiting 2s each)
+  for (let attempt = 0; attempt <= MAX_RETRIES_ON_TRANSIENT; attempt++) {
+    try {
+      return await ai.models.generateContent({
+        model: PRIMARY_GEMINI_MODEL,
+        contents: requestParams.contents,
+        config: requestParams.config,
+      });
+    } catch (err: unknown) {
+      lastError = err;
+      if (!isRetryable503Or429(err)) {
+        throw err;
+      }
+      if (attempt < MAX_RETRIES_ON_TRANSIENT) {
+        console.warn(
+          `[Gemini] Error 503/429 con ${PRIMARY_GEMINI_MODEL}. Reintentando (${attempt + 1}/${MAX_RETRIES_ON_TRANSIENT}) tras ${RETRY_DELAY_MS}ms...`
+        );
+        await sleep(RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  // 2. If primary model still fails with 503/429 after retries, try backup fallback model
+  for (const fallbackModel of FALLBACK_GEMINI_MODELS) {
+    try {
+      console.warn(
+        `[Gemini] ${PRIMARY_GEMINI_MODEL} agotó los ${MAX_RETRIES_ON_TRANSIENT} reintentos. Intentando con modelo de respaldo ${fallbackModel}...`
+      );
+      return await ai.models.generateContent({
+        model: fallbackModel,
+        contents: requestParams.contents,
+        config: requestParams.config,
+      });
+    } catch (fallbackErr: unknown) {
+      lastError = fallbackErr;
+    }
+  }
+
+  throw lastError;
+}
+
 async function extractDirectlyWithGeminiSdk(params: {
   apiKey: string;
   base64Data: string;
@@ -156,11 +245,9 @@ Extrae EXCLUSIVAMENTE estos 6 campos en JSON estricto siguiendo el esquema:
 Si algún campo de texto o fecha no aparece en el documento, devuelve null.`,
   };
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-4-hydrogen',
+  const response = await generateWithRetryAndFallback(ai, {
     contents: { parts: [mediaPart, textPart] },
     config: {
-      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       systemInstruction:
         'Eres un asistente especializado en digitalización de órdenes de trabajo y partes técnicos industriales en español (incluidos documentos PDF, planos y fotografías tomadas con el móvil de partes impresos o manuscritos). Extraes únicamente los 6 campos solicitados sin inventar datos ni deducir fechas ausentes. Cuando un dato de texto o fecha no figure explícitamente, devuelves null; y en isUrgent devuelves true solo si el documento indica urgencia o prioridad alta.',
       responseMimeType: 'application/json',
@@ -303,7 +390,6 @@ export async function extractWorkOrderFields(params: {
 
   const contentType = (response.headers.get('content-type') || '').toLowerCase();
   if (!contentType.includes('application/json')) {
-    // Typical on static Vercel deployments when /api/* is unavailable and VITE_GEMINI_API_KEY was not set
     if (response.status === 404 || response.status === 405 || contentType.includes('text/html')) {
       throw new WorkOrderExtractionError(
         MISSING_API_KEY_MESSAGE,

@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 export interface ServerlessReq {
   method?: string;
@@ -9,6 +9,83 @@ export interface ServerlessRes {
   status: (code: number) => ServerlessRes;
   json: (data: unknown) => void;
   setHeader?: (name: string, value: string) => void;
+}
+
+const PRIMARY_GEMINI_MODEL = 'gemini-2.5-flash';
+const FALLBACK_GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite'] as const;
+const MAX_RETRIES_ON_TRANSIENT = 3;
+const RETRY_DELAY_MS = 2000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryable503Or429(err: unknown): boolean {
+  if (err && typeof err === 'object') {
+    const e = err as Record<string, unknown>;
+    const status = e.status || e.code || e.statusCode;
+    if (status === 503 || status === 429) return true;
+  }
+  const msg = String(
+    err instanceof Error ? err.message : (err as { message?: string })?.message || err || ''
+  ).toUpperCase();
+  return (
+    msg.includes('503') ||
+    msg.includes('429') ||
+    msg.includes('UNAVAILABLE') ||
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    msg.includes('HIGH DEMAND') ||
+    msg.includes('OVERLOADED') ||
+    msg.includes('TOO MANY REQUESTS')
+  );
+}
+
+async function generateWithRetryAndFallback(
+  ai: GoogleGenAI,
+  requestParams: {
+    contents: { parts: Array<Record<string, unknown>> };
+    config: Record<string, unknown>;
+  }
+) {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES_ON_TRANSIENT; attempt++) {
+    try {
+      return await ai.models.generateContent({
+        model: PRIMARY_GEMINI_MODEL,
+        contents: requestParams.contents,
+        config: requestParams.config,
+      });
+    } catch (err: unknown) {
+      lastError = err;
+      if (!isRetryable503Or429(err)) {
+        throw err;
+      }
+      if (attempt < MAX_RETRIES_ON_TRANSIENT) {
+        console.warn(
+          `[Vercel Gemini] Error 503/429 con ${PRIMARY_GEMINI_MODEL}. Reintentando (${attempt + 1}/${MAX_RETRIES_ON_TRANSIENT}) en ${RETRY_DELAY_MS}ms...`
+        );
+        await sleep(RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  for (const fallbackModel of FALLBACK_GEMINI_MODELS) {
+    try {
+      console.warn(
+        `[Vercel Gemini] ${PRIMARY_GEMINI_MODEL} falló tras ${MAX_RETRIES_ON_TRANSIENT} reintentos. Probando modelo de respaldo ${fallbackModel}...`
+      );
+      return await ai.models.generateContent({
+        model: fallbackModel,
+        contents: requestParams.contents,
+        config: requestParams.config,
+      });
+    } catch (fallbackErr: unknown) {
+      lastError = fallbackErr;
+    }
+  }
+
+  throw lastError;
 }
 
 function getGeminiClient(): GoogleGenAI {
@@ -180,8 +257,7 @@ export async function runServerlessWorkOrderExtraction(
         ? 'esta fotografía tomada con el móvil de un parte u orden de trabajo en papel, albarán, hoja de taller o plano técnico'
         : `este documento PDF${fileName ? ` (nombre de archivo: "${fileName}")` : ''} correspondiente a una orden de trabajo, parte, pedido o plano técnico de taller`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateWithRetryAndFallback(ai, {
       contents: {
         parts: [
           {
@@ -206,7 +282,6 @@ Si algún campo de texto o fecha no aparece en el documento, devuelve null.`,
         ],
       },
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         systemInstruction:
           'Eres un asistente especializado en digitalización de órdenes de trabajo y partes técnicos industriales en español. Extraes únicamente los 6 campos solicitados sin inventar datos ni deducir fechas ausentes.',
         responseMimeType: 'application/json',
