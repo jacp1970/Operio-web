@@ -436,7 +436,6 @@ export const JobModal: React.FC<JobModalProps> = ({
         mimeType: 'application/pdf',
         fileName,
         sourceType: 'pdf',
-        onStatusChange: (status) => setAnalyzingStatusText(status),
       });
 
       const elapsedSec = ((performance.now() - requestStartMs) / 1000).toFixed(1);
@@ -456,10 +455,9 @@ export const JobModal: React.FC<JobModalProps> = ({
   };
 
   /**
-   * Ephemeral Mobile Photo Extraction via Gemini (server-side API route)
-   * Compresses the photo via canvas (max 1024px, image/jpeg 0.65), extracts ONLY the work order fields,
-   * reports live compression KB, automatic retry status, and exact latency,
-   * and immediately discards the photo in memory without storing it in Firestore or localStorage.
+   * Ephemeral Mobile Photo Extraction directly via @google/genai in the browser (VITE_GEMINI_API_KEY)
+   * Compresses the photo via canvas (max 1024px, image/jpeg 0.65), enforces a 20s timeout,
+   * extracts ONLY the work order fields, and immediately discards the photo in memory.
    */
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputEl = e.target;
@@ -494,7 +492,11 @@ export const JobModal: React.FC<JobModalProps> = ({
       // Read and compress the camera file BEFORE clearing inputEl.value so mobile browsers don't revoke the temp file
       const ephemeralPhoto = await readPhotoAsEphemeralBase64(file);
       ephemeralBase64 = ephemeralPhoto.base64;
-      inputEl.value = '';
+      try {
+        inputEl.value = '';
+      } catch {
+        // Ignore mobile file input reset errors
+      }
 
       setLastPhotoStats({
         sizeKB: ephemeralPhoto.sizeKB,
@@ -520,7 +522,6 @@ export const JobModal: React.FC<JobModalProps> = ({
         base64Data: ephemeralBase64,
         mimeType: ephemeralPhoto.mimeType,
         sourceType: 'photo',
-        onStatusChange: (status) => setAnalyzingStatusText(status),
       });
 
       const elapsedSec = ((performance.now() - geminiStartMs) / 1000).toFixed(1);
@@ -539,7 +540,11 @@ export const JobModal: React.FC<JobModalProps> = ({
       );
     } finally {
       ephemeralBase64 = '';
-      inputEl.value = '';
+      try {
+        inputEl.value = '';
+      } catch {
+        // Ignore DOM reset errors so loading state always clears
+      }
       setIsAnalyzingPdf(false);
       setAnalyzingSource(null);
       setAnalyzingStatusText('');

@@ -117,8 +117,19 @@ function drawAndCompressToJpeg(
 function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('IMAGE_DECODE_FAILED'));
+    const timer = setTimeout(() => {
+      img.onload = null;
+      img.onerror = null;
+      reject(new Error('IMAGE_DECODE_TIMEOUT'));
+    }, 8000);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(img);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      reject(new Error('IMAGE_DECODE_FAILED'));
+    };
     img.src = url;
   });
 }
