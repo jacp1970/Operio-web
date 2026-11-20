@@ -2,7 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 dotenv.config();
 
@@ -19,6 +19,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 function getGeminiClient(): GoogleGenAI {
   const apiKey =
     process.env.GEMINI_API_KEY?.trim() ||
+    process.env.VITE_GEMINI_API_KEY?.trim() ||
     process.env.API_KEY?.trim();
   if (!apiKey) {
     throw new Error('MISSING_GEMINI_API_KEY');
@@ -179,15 +180,6 @@ function isRetryable503Or429(err: any): boolean {
   );
 }
 
-function isThinkingConfigError(err: any): boolean {
-  const status = err?.status || err?.code || err?.statusCode;
-  const msg = String(err?.message || err || '').toLowerCase();
-  return (
-    (status === 400 || msg.includes('400') || msg.includes('invalid_argument')) &&
-    (msg.includes('thinkingbudget') || msg.includes('thinking_budget') || msg.includes('thinkinglevel') || msg.includes('thinking'))
-  );
-}
-
 async function generateWithRetry(
   ai: GoogleGenAI,
   requestParams: {
@@ -197,8 +189,6 @@ async function generateWithRetry(
   maxRetries = MAX_RETRIES_ON_TRANSIENT
 ) {
   let lastError: any;
-  const activeConfig: Record<string, unknown> = { ...requestParams.config };
-  let thinkingFallbackStep = 0;
 
   // Retry primary model (gemini-3.8-flash) up to maxRetries times waiting 2s on 503 / 429
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -206,21 +196,10 @@ async function generateWithRetry(
       return await ai.models.generateContent({
         model: PRIMARY_GEMINI_MODEL,
         contents: requestParams.contents,
-        config: activeConfig,
+        config: requestParams.config,
       });
     } catch (err: any) {
       lastError = err;
-
-      if (isThinkingConfigError(err) && thinkingFallbackStep < 2) {
-        thinkingFallbackStep++;
-        activeConfig.thinkingConfig =
-          thinkingFallbackStep === 1
-            ? { thinkingLevel: ThinkingLevel.MINIMAL }
-            : { thinkingLevel: ThinkingLevel.LOW };
-        attempt--;
-        continue;
-      }
-
       if (!isRetryable503Or429(err)) {
         throw err;
       }
@@ -267,7 +246,6 @@ async function extractWorkOrderWithGemini(params: {
     {
       contents: { parts: [mediaPart, textPart] },
       config: {
-        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
