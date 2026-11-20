@@ -99,6 +99,7 @@ export const JobModal: React.FC<JobModalProps> = ({
   const [analyzingSource, setAnalyzingSource] = useState<'pdf' | 'photo' | null>(null);
   const [analyzingStatusText, setAnalyzingStatusText] = useState<string>('');
   const [analyzingSubText, setAnalyzingSubText] = useState<string>('');
+  const [liveAnalysisSeconds, setLiveAnalysisSeconds] = useState<number>(0);
   const [analysisDurationSec, setAnalysisDurationSec] = useState<string | null>(null);
   const [lastPhotoStats, setLastPhotoStats] = useState<{
     sizeKB: number;
@@ -134,6 +135,7 @@ export const JobModal: React.FC<JobModalProps> = ({
     setAnalyzingSource(null);
     setAnalyzingStatusText('');
     setAnalyzingSubText('');
+    setLiveAnalysisSeconds(0);
     setAnalysisDurationSec(null);
     setLastPhotoStats(null);
     setIsResolvingPdf(false);
@@ -178,6 +180,20 @@ export const JobModal: React.FC<JobModalProps> = ({
     setNewAlertText('');
     setErrorMessage('');
   }, [job?.id, isOpen]);
+
+  // Live seconds counter while Gemini is analyzing a photo or PDF
+  useEffect(() => {
+    if (!isAnalyzingPdf) {
+      setLiveAnalysisSeconds(0);
+      return;
+    }
+    const startMs = performance.now();
+    setLiveAnalysisSeconds(0);
+    const intervalId = setInterval(() => {
+      setLiveAnalysisSeconds((performance.now() - startMs) / 1000);
+    }, 100);
+    return () => clearInterval(intervalId);
+  }, [isAnalyzingPdf]);
 
   // Fill empty department/status/operator defaults if Firestore data finishes loading after opening
   useEffect(() => {
@@ -852,21 +868,26 @@ export const JobModal: React.FC<JobModalProps> = ({
 
           {/* Multimodal Gemini PDF / Photo Auto-fill Status */}
           {isAnalyzingPdf && (
-            <div className="p-4 rounded-2xl bg-oterio-50/90 border border-oterio-200/90 flex items-center gap-3">
-              <Loader2 className="w-5 h-5 text-oterio-600 animate-spin shrink-0" />
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-oterio-950">
-                  {analyzingStatusText ||
-                    (analyzingSource === 'photo'
-                      ? 'Analizando fotografía del parte con Gemini...'
-                      : 'Analizando archivo PDF con Gemini...')}
-                </p>
-                <p className="text-[11px] text-oterio-700 mt-0.5">
-                  {analyzingSubText ||
-                    (analyzingSource === 'photo'
-                      ? 'Extrayendo únicamente los datos del parte (la fotografía no se almacena ni local ni en la nube).'
-                      : 'Extrayendo Nº OT, cliente, fechas, urgencia y descripción del trabajo para tu revisión antes de guardar.')}
-                </p>
+            <div className="p-4 rounded-2xl bg-oterio-50/90 border border-oterio-200/90 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <Loader2 className="w-5 h-5 text-oterio-600 animate-spin shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-oterio-950">
+                    {analyzingStatusText ||
+                      (analyzingSource === 'photo'
+                        ? 'Analizando fotografía del parte con Gemini...'
+                        : 'Analizando archivo PDF con Gemini...')}
+                  </p>
+                  <p className="text-[11px] text-oterio-700 mt-0.5">
+                    {analyzingSubText ||
+                      (analyzingSource === 'photo'
+                        ? 'Extrayendo únicamente los datos del parte (la fotografía no se almacena ni local ni en la nube).'
+                        : 'Extrayendo Nº OT, cliente, fechas, urgencia y descripción del trabajo para tu revisión antes de guardar.')}
+                  </p>
+                </div>
+              </div>
+              <div className="shrink-0 px-2.5 py-1 rounded-lg bg-white/90 border border-oterio-200 font-mono text-xs font-bold text-oterio-800 tabular-nums">
+                {liveAnalysisSeconds.toFixed(1)} s / 15 s
               </div>
             </div>
           )}

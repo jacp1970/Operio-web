@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 export interface ExtractedWorkOrderFields {
   ot: string | null;
@@ -20,10 +20,17 @@ export class WorkOrderExtractionError extends Error {
 }
 
 export const MISSING_API_KEY_MESSAGE = 'Falta configurar la API Key de Gemini';
-export const TIMEOUT_ERROR_MESSAGE = 'Tiempo de espera agotado (20s). Inténtalo de nuevo.';
+export const TIMEOUT_ERROR_MESSAGE = 'Tiempo de espera agotado (15s). Inténtalo de nuevo.';
 
-export const PRIMARY_GEMINI_MODEL = 'gemini-3.8-flash';
-const REQUEST_TIMEOUT_MS = 20000;
+export const PRIMARY_GEMINI_MODEL = 'gemini-3.8-flash-lite';
+export const FALLBACK_GEMINI_MODEL = 'gemini-3.8-flash';
+const REQUEST_TIMEOUT_MS = 15000;
+
+type ThinkingMode = 'budget0' | 'minimal' | 'none';
+
+// Session cache so consecutive work-order uploads skip already-known 404 / thinking fallbacks
+let cachedModel: string = PRIMARY_GEMINI_MODEL;
+let cachedThinkingMode: ThinkingMode = 'budget0';
 
 function resolveBrowserGeminiApiKey(): string | null {
   try {
@@ -53,6 +60,37 @@ function resolveBrowserGeminiApiKey(): string | null {
   }
 
   return null;
+}
+
+function getErrorStatusCode(err: unknown): number | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const e = err as Record<string, unknown>;
+  if (typeof e.status === 'number') return e.status;
+  if (typeof e.code === 'number') return e.code;
+  if (typeof e.statusCode === 'number') return e.statusCode;
+  return undefined;
+}
+
+function isNotFound404Error(err: unknown): boolean {
+  if (getErrorStatusCode(err) === 404) return true;
+  const msg = String(
+    err instanceof Error ? err.message : (err as { message?: string })?.message || err || ''
+  ).toUpperCase();
+  return msg.includes('404') || msg.includes('NOT_FOUND') || msg.includes('NOT FOUND');
+}
+
+function isThinkingConfigError(err: unknown): boolean {
+  const status = getErrorStatusCode(err);
+  const msg = String(
+    err instanceof Error ? err.message : (err as { message?: string })?.message || err || ''
+  ).toLowerCase();
+  return (
+    (status === 400 || msg.includes('400') || msg.includes('invalid_argument')) &&
+    (msg.includes('thinkingbudget') ||
+      msg.includes('thinking_budget') ||
+      msg.includes('thinkinglevel') ||
+      msg.includes('thinking'))
+  );
 }
 
 function extractRawBase64(input: string): string {
@@ -96,10 +134,42 @@ function normalizeTextField(value: unknown): string | null {
   return trimmed;
 }
 
+function buildRequestConfig(abortSignal: AbortSignal, thinkingMode: ThinkingMode) {
+  const baseConfig: Record<string, unknown> = {
+    abortSignal,
+    temperature: 0,
+    maxOutputTokens: 512,
+    responseMimeType: 'application/json',
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        ot: { type: Type.STRING, nullable: true },
+        client: { type: Type.STRING, nullable: true },
+        createdAt: { type: Type.STRING, nullable: true },
+        deliveryDate: { type: Type.STRING, nullable: true },
+        notes: { type: Type.STRING, nullable: true },
+        isUrgent: { type: Type.BOOLEAN },
+      },
+      required: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
+      propertyOrdering: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
+    },
+  };
+
+  if (thinkingMode === 'budget0') {
+    baseConfig.thinkingConfig = { thinkingBudget: 0 };
+  } else if (thinkingMode === 'minimal') {
+    baseConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.MINIMAL };
+  }
+
+  return baseConfig;
+}
+
 /**
  * Extracts work order fields directly from the browser using @google/genai and VITE_GEMINI_API_KEY.
- * - Single attempt (no retry loop) for instant visibility of real responses/errors.
- * - Hard 20-second timeout enforced via both AbortController and Promise.race.
+ * - Uses gemini-3.8-flash-lite as primary model, automatically falling back to gemini-3.8-flash on 404.
+ * - Maximizes speed with temperature: 0, maxOutputTokens: 512, thinkingBudget: 0 (with safe fallback to MINIMAL or omitted),
+ *   and a single-sentence extraction prompt.
+ * - Enforces a strict 15-second timeout via AbortController + Promise.race.
  */
 export async function extractWorkOrderFields(params: {
   base64Data: string;
@@ -141,7 +211,7 @@ export async function extractWorkOrderFields(params: {
       reject(
         new WorkOrderExtractionError(
           TIMEOUT_ERROR_MESSAGE,
-          'TIMEOUT_20S: La petición directa a Gemini superó los 20 segundos.'
+          'TIMEOUT_15S: La petición directa a Gemini superó los 15 segundos.'
         )
       );
     }, REQUEST_TIMEOUT_MS);
@@ -155,40 +225,55 @@ export async function extractWorkOrderFields(params: {
   };
 
   const textPart = {
-    text: `Extrae los datos de esta orden de trabajo (${params.sourceType === 'photo' ? 'foto' : `PDF${params.fileName ? ` "${String(params.fileName)}"` : ''}`}) en JSON estricto. Sin inventar datos; usa null si un campo no aparece.
-- ot: Nº OT / Parte / Ref.
-- client: Cliente destinatario.
-- createdAt: Fecha de entrada (YYYY-MM-DD).
-- deliveryDate: Fecha de entrega explícita (YYYY-MM-DD) o null.
-- notes: Breve descripción técnica del trabajo.
-- isUrgent: true solo si indica urgencia explícita, si no false.`,
+    text: 'Extrae de esta orden de trabajo en JSON los campos ot, client, createdAt (YYYY-MM-DD), deliveryDate (YYYY-MM-DD explícita o null), notes (breve) e isUrgent (boolean), usando null si no aparece.',
+  };
+
+  const runGeminiCall = async () => {
+    let modelToUse = cachedModel;
+    let thinkingMode: ThinkingMode = cachedThinkingMode;
+
+    while (true) {
+      if (abortController.signal.aborted) {
+        throw new WorkOrderExtractionError(TIMEOUT_ERROR_MESSAGE, 'AbortError (15s timeout)');
+      }
+
+      try {
+        const res = await ai.models.generateContent({
+          model: modelToUse,
+          contents: { parts: [mediaPart, textPart] },
+          config: buildRequestConfig(abortController.signal, thinkingMode),
+        });
+        cachedModel = modelToUse;
+        cachedThinkingMode = thinkingMode;
+        return res;
+      } catch (err: unknown) {
+        // Automatic 404 fallback from gemini-3.8-flash-lite -> gemini-3.8-flash
+        if (modelToUse === PRIMARY_GEMINI_MODEL && isNotFound404Error(err)) {
+          modelToUse = FALLBACK_GEMINI_MODEL;
+          cachedModel = FALLBACK_GEMINI_MODEL;
+          continue;
+        }
+
+        // Safe fallback if thinkingBudget: 0 or ThinkingLevel.MINIMAL is rejected
+        if (isThinkingConfigError(err)) {
+          if (thinkingMode === 'budget0') {
+            thinkingMode = 'minimal';
+            continue;
+          }
+          if (thinkingMode === 'minimal') {
+            thinkingMode = 'none';
+            continue;
+          }
+        }
+
+        throw err;
+      }
+    }
   };
 
   let response;
   try {
-    const geminiPromise = ai.models.generateContent({
-      model: PRIMARY_GEMINI_MODEL,
-      contents: { parts: [mediaPart, textPart] },
-      config: {
-        abortSignal: abortController.signal,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            ot: { type: Type.STRING, nullable: true },
-            client: { type: Type.STRING, nullable: true },
-            createdAt: { type: Type.STRING, nullable: true },
-            deliveryDate: { type: Type.STRING, nullable: true },
-            notes: { type: Type.STRING, nullable: true },
-            isUrgent: { type: Type.BOOLEAN },
-          },
-          required: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
-          propertyOrdering: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
-        },
-      },
-    });
-
-    response = await Promise.race([geminiPromise, timeoutPromise]);
+    response = await Promise.race([runGeminiCall(), timeoutPromise]);
   } catch (err: unknown) {
     if (err instanceof WorkOrderExtractionError) {
       throw err;
@@ -196,7 +281,7 @@ export async function extractWorkOrderFields(params: {
     if (timedOut || (err instanceof Error && err.name === 'AbortError')) {
       throw new WorkOrderExtractionError(
         TIMEOUT_ERROR_MESSAGE,
-        err instanceof Error ? err.message : 'AbortError (20s timeout)'
+        err instanceof Error ? err.message : 'AbortError (15s timeout)'
       );
     }
     const rawMessage = err instanceof Error ? err.message : String(err || 'Error desconocido');
