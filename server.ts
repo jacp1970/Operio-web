@@ -18,9 +18,8 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 function getGeminiClient(): GoogleGenAI {
   const apiKey =
-    process.env.VITE_GEMINI_API_KEY?.trim() ||
-    process.env.API_KEY?.trim() ||
-    process.env.GEMINI_API_KEY?.trim();
+    process.env.GEMINI_API_KEY?.trim() ||
+    process.env.API_KEY?.trim();
   if (!apiKey) {
     throw new Error('MISSING_GEMINI_API_KEY');
   }
@@ -194,14 +193,15 @@ async function generateWithRetry(
   requestParams: {
     contents: { parts: Array<Record<string, unknown>> };
     config: Record<string, unknown>;
-  }
+  },
+  maxRetries = MAX_RETRIES_ON_TRANSIENT
 ) {
   let lastError: any;
   const activeConfig: Record<string, unknown> = { ...requestParams.config };
   let thinkingFallbackStep = 0;
 
-  // Retry primary model (gemini-3.8-flash) up to 3 times waiting 2s on 503 / 429
-  for (let attempt = 0; attempt <= MAX_RETRIES_ON_TRANSIENT; attempt++) {
+  // Retry primary model (gemini-3.8-flash) up to maxRetries times waiting 2s on 503 / 429
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await ai.models.generateContent({
         model: PRIMARY_GEMINI_MODEL,
@@ -224,9 +224,9 @@ async function generateWithRetry(
       if (!isRetryable503Or429(err)) {
         throw err;
       }
-      if (attempt < MAX_RETRIES_ON_TRANSIENT) {
+      if (attempt < maxRetries) {
         console.warn(
-          `[Server Gemini] Error 503/429 con ${PRIMARY_GEMINI_MODEL}. Reintentando (${attempt + 1}/${MAX_RETRIES_ON_TRANSIENT}) en ${RETRY_DELAY_MS}ms...`
+          `[Server Gemini] Error 503/429 con ${PRIMARY_GEMINI_MODEL}. Reintentando (${attempt + 1}/${maxRetries}) en ${RETRY_DELAY_MS}ms...`
         );
         await sleep(RETRY_DELAY_MS);
       }
@@ -241,6 +241,7 @@ async function extractWorkOrderWithGemini(params: {
   mimeType: string;
   fileName?: string;
   sourceType: 'pdf' | 'photo';
+  singleAttempt?: boolean;
 }): Promise<ExtractedWorkOrderFields> {
   const ai = getGeminiClient();
 
@@ -261,26 +262,30 @@ async function extractWorkOrderWithGemini(params: {
 - isUrgent: true solo si indica urgencia explícita, si no false.`,
   };
 
-  const response = await generateWithRetry(ai, {
-    contents: { parts: [mediaPart, textPart] },
-    config: {
-      thinkingConfig: { thinkingBudget: 0 },
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          ot: { type: Type.STRING, nullable: true },
-          client: { type: Type.STRING, nullable: true },
-          createdAt: { type: Type.STRING, nullable: true },
-          deliveryDate: { type: Type.STRING, nullable: true },
-          notes: { type: Type.STRING, nullable: true },
-          isUrgent: { type: Type.BOOLEAN },
+  const response = await generateWithRetry(
+    ai,
+    {
+      contents: { parts: [mediaPart, textPart] },
+      config: {
+        thinkingConfig: { thinkingBudget: 0 },
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            ot: { type: Type.STRING, nullable: true },
+            client: { type: Type.STRING, nullable: true },
+            createdAt: { type: Type.STRING, nullable: true },
+            deliveryDate: { type: Type.STRING, nullable: true },
+            notes: { type: Type.STRING, nullable: true },
+            isUrgent: { type: Type.BOOLEAN },
+          },
+          required: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
+          propertyOrdering: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
         },
-        required: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
-        propertyOrdering: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
       },
     },
-  });
+    params.singleAttempt ? 0 : MAX_RETRIES_ON_TRANSIENT
+  );
 
   const rawText = (response.text ?? '').trim();
   if (!rawText) {
@@ -341,9 +346,24 @@ function handleGeminiRouteError(err: any, res: express.Response, sourceLabel: st
     });
   }
 
-  if (statusCode === 429 || rawMsg.includes('RESOURCE_EXHAUSTED')) {
+  if (
+    statusCode === 503 ||
+    rawMsg.toUpperCase().includes('503') ||
+    rawMsg.toUpperCase().includes('UNAVAILABLE') ||
+    rawMsg.toUpperCase().includes('HIGH DEMAND') ||
+    rawMsg.toUpperCase().includes('OVERLOADED')
+  ) {
+    return res.status(503).json({
+      code: 'TRANSIENT_OVERLOAD',
+      error: 'El servidor de Gemini está temporalmente saturado (503). Inténtalo de nuevo en unos segundos.',
+      technicalError: rawMsg,
+    });
+  }
+
+  if (statusCode === 429 || rawMsg.toUpperCase().includes('429') || rawMsg.toUpperCase().includes('RESOURCE_EXHAUSTED')) {
     return res.status(429).json({
-      error: 'Se ha superado temporalmente la cuota de peticiones de la IA. Inténtalo de nuevo en unos segundos.',
+      code: 'TRANSIENT_OVERLOAD',
+      error: 'Se ha superado temporalmente la cuota de peticiones de la IA (429). Inténtalo de nuevo en unos segundos.',
       technicalError: rawMsg,
     });
   }
@@ -357,7 +377,7 @@ function handleGeminiRouteError(err: any, res: express.Response, sourceLabel: st
 // Multimodal PDF extraction endpoint using Gemini (gemini-3.8-flash)
 app.post('/api/extract-work-order-pdf', async (req, res) => {
   try {
-    const { pdfBase64, fileName } = req.body || {};
+    const { pdfBase64, fileName, singleAttempt } = req.body || {};
 
     if (!pdfBase64 || typeof pdfBase64 !== 'string') {
       return res.status(400).json({
@@ -377,6 +397,7 @@ app.post('/api/extract-work-order-pdf', async (req, res) => {
       mimeType: 'application/pdf',
       fileName: typeof fileName === 'string' ? fileName : undefined,
       sourceType: 'pdf',
+      singleAttempt: singleAttempt === true,
     });
 
     return res.json(result);
@@ -389,7 +410,7 @@ app.post('/api/extract-work-order-pdf', async (req, res) => {
 // Processes the image strictly in memory to extract work order fields and immediately discards it.
 app.post('/api/extract-work-order-photo', async (req, res) => {
   try {
-    const { imageBase64, mimeType } = req.body || {};
+    const { imageBase64, mimeType, singleAttempt } = req.body || {};
 
     if (!imageBase64 || typeof imageBase64 !== 'string') {
       return res.status(400).json({
@@ -413,6 +434,7 @@ app.post('/api/extract-work-order-photo', async (req, res) => {
       base64Data: cleanBase64,
       mimeType: resolvedMimeType,
       sourceType: 'photo',
+      singleAttempt: singleAttempt === true,
     });
 
     return res.json(result);

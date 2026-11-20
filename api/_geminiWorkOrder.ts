@@ -60,13 +60,14 @@ async function generateWithRetry(
   requestParams: {
     contents: { parts: Array<Record<string, unknown>> };
     config: Record<string, unknown>;
-  }
+  },
+  maxRetries = MAX_RETRIES_ON_TRANSIENT
 ) {
   let lastError: unknown;
   const activeConfig: Record<string, unknown> = { ...requestParams.config };
   let thinkingFallbackStep = 0;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES_ON_TRANSIENT; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await ai.models.generateContent({
         model: PRIMARY_GEMINI_MODEL,
@@ -89,9 +90,9 @@ async function generateWithRetry(
       if (!isRetryable503Or429(err)) {
         throw err;
       }
-      if (attempt < MAX_RETRIES_ON_TRANSIENT) {
+      if (attempt < maxRetries) {
         console.warn(
-          `[Vercel Gemini] Error 503/429 con ${PRIMARY_GEMINI_MODEL}. Reintentando (${attempt + 1}/${MAX_RETRIES_ON_TRANSIENT}) en ${RETRY_DELAY_MS}ms...`
+          `[Vercel Gemini] Error 503/429 con ${PRIMARY_GEMINI_MODEL}. Reintentando (${attempt + 1}/${maxRetries}) en ${RETRY_DELAY_MS}ms...`
         );
         await sleep(RETRY_DELAY_MS);
       }
@@ -103,9 +104,8 @@ async function generateWithRetry(
 
 function getGeminiClient(): GoogleGenAI {
   const apiKey =
-    process.env.VITE_GEMINI_API_KEY?.trim() ||
-    process.env.API_KEY?.trim() ||
-    process.env.GEMINI_API_KEY?.trim();
+    process.env.GEMINI_API_KEY?.trim() ||
+    process.env.API_KEY?.trim();
 
   if (!apiKey) {
     throw new Error('MISSING_GEMINI_API_KEY');
@@ -263,46 +263,51 @@ export async function runServerlessWorkOrderExtraction(
           );
 
     const fileName = typeof body.fileName === 'string' ? body.fileName : undefined;
+    const singleAttempt = body.singleAttempt === true;
     const ai = getGeminiClient();
 
-    const response = await generateWithRetry(ai, {
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType,
-              data: cleanBase64,
+    const response = await generateWithRetry(
+      ai,
+      {
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: cleanBase64,
+              },
             },
-          },
-          {
-            text: `Extrae los datos de esta orden de trabajo (${sourceType === 'photo' ? 'foto' : `PDF${fileName ? ` "${fileName}"` : ''}`}) en JSON estricto. Sin inventar datos; usa null si un campo no aparece.
+            {
+              text: `Extrae los datos de esta orden de trabajo (${sourceType === 'photo' ? 'foto' : `PDF${fileName ? ` "${fileName}"` : ''}`}) en JSON estricto. Sin inventar datos; usa null si un campo no aparece.
 - ot: Nº OT / Parte / Ref.
 - client: Cliente destinatario.
 - createdAt: Fecha de entrada (YYYY-MM-DD).
 - deliveryDate: Fecha de entrega explícita (YYYY-MM-DD) o null.
 - notes: Breve descripción técnica del trabajo.
 - isUrgent: true solo si indica urgencia explícita, si no false.`,
+            },
+          ],
+        },
+        config: {
+          thinkingConfig: { thinkingBudget: 0 },
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              ot: { type: Type.STRING, nullable: true },
+              client: { type: Type.STRING, nullable: true },
+              createdAt: { type: Type.STRING, nullable: true },
+              deliveryDate: { type: Type.STRING, nullable: true },
+              notes: { type: Type.STRING, nullable: true },
+              isUrgent: { type: Type.BOOLEAN },
+            },
+            required: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
+            propertyOrdering: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
           },
-        ],
-      },
-      config: {
-        thinkingConfig: { thinkingBudget: 0 },
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            ot: { type: Type.STRING, nullable: true },
-            client: { type: Type.STRING, nullable: true },
-            createdAt: { type: Type.STRING, nullable: true },
-            deliveryDate: { type: Type.STRING, nullable: true },
-            notes: { type: Type.STRING, nullable: true },
-            isUrgent: { type: Type.BOOLEAN },
-          },
-          required: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
-          propertyOrdering: ['ot', 'client', 'createdAt', 'deliveryDate', 'notes', 'isUrgent'],
         },
       },
-    });
+      singleAttempt ? 0 : MAX_RETRIES_ON_TRANSIENT
+    );
 
     const rawText = (response.text ?? '').trim();
     if (!rawText) {
@@ -322,11 +327,46 @@ export async function runServerlessWorkOrderExtraction(
     });
   } catch (err: unknown) {
     const rawMsg = err instanceof Error ? err.message : String(err || 'Error desconocido');
+    const upperMsg = rawMsg.toUpperCase();
+    const errStatus =
+      err && typeof err === 'object'
+        ? (err as Record<string, unknown>).status ||
+          (err as Record<string, unknown>).code ||
+          (err as Record<string, unknown>).statusCode
+        : undefined;
+
     if (rawMsg === 'MISSING_GEMINI_API_KEY') {
       return res.status(500).json({
         code: 'MISSING_GEMINI_API_KEY',
         error: 'Falta configurar la API Key de Gemini',
         technicalError: 'MISSING_GEMINI_API_KEY: No se encontró GEMINI_API_KEY ni API_KEY en Vercel.',
+      });
+    }
+
+    if (
+      errStatus === 503 ||
+      upperMsg.includes('503') ||
+      upperMsg.includes('UNAVAILABLE') ||
+      upperMsg.includes('HIGH DEMAND') ||
+      upperMsg.includes('OVERLOADED')
+    ) {
+      return res.status(503).json({
+        code: 'TRANSIENT_OVERLOAD',
+        error: 'El servidor de Gemini está temporalmente saturado (503).',
+        technicalError: rawMsg,
+      });
+    }
+
+    if (
+      errStatus === 429 ||
+      upperMsg.includes('429') ||
+      upperMsg.includes('RESOURCE_EXHAUSTED') ||
+      upperMsg.includes('TOO MANY REQUESTS')
+    ) {
+      return res.status(429).json({
+        code: 'TRANSIENT_OVERLOAD',
+        error: 'Se ha superado temporalmente la cuota de peticiones de la IA (429).',
+        technicalError: rawMsg,
       });
     }
 

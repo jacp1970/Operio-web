@@ -97,6 +97,15 @@ export const JobModal: React.FC<JobModalProps> = ({
   const [attachedPdf, setAttachedPdf] = useState<PdfAttachment | null>(null);
   const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
   const [analyzingSource, setAnalyzingSource] = useState<'pdf' | 'photo' | null>(null);
+  const [analyzingStatusText, setAnalyzingStatusText] = useState<string>('');
+  const [analyzingSubText, setAnalyzingSubText] = useState<string>('');
+  const [analysisDurationSec, setAnalysisDurationSec] = useState<string | null>(null);
+  const [lastPhotoStats, setLastPhotoStats] = useState<{
+    sizeKB: number;
+    width: number;
+    height: number;
+    wasCompressed: boolean;
+  } | null>(null);
   const [isResolvingPdf, setIsResolvingPdf] = useState(false);
   const [pdfSuccessNotice, setPdfSuccessNotice] = useState<string | null>(null);
   const [pdfErrorNotice, setPdfErrorNotice] = useState<string | null>(null);
@@ -123,6 +132,10 @@ export const JobModal: React.FC<JobModalProps> = ({
     setHasManuallyEditedStatus(false);
     setIsAnalyzingPdf(false);
     setAnalyzingSource(null);
+    setAnalyzingStatusText('');
+    setAnalyzingSubText('');
+    setAnalysisDurationSec(null);
+    setLastPhotoStats(null);
     setIsResolvingPdf(false);
     setPdfSuccessNotice(null);
     setPdfErrorNotice(null);
@@ -397,25 +410,37 @@ export const JobModal: React.FC<JobModalProps> = ({
   };
 
   /**
-   * Multimodal PDF Extraction via Gemini Flash (supports Vercel Vite env & backend /api route)
+   * Multimodal PDF Extraction via Gemini (server-side API route)
    * Keeps the PDF upload flow intact and populates ONLY the form fields without auto-saving.
    */
   const extractDataFromPdfWithGemini = async (pdfDataUrl: string, fileName: string) => {
     setIsAnalyzingPdf(true);
     setAnalyzingSource('pdf');
+    setAnalyzingStatusText('Enviando archivo PDF a Gemini...');
+    setAnalyzingSubText('Extrayendo Nº OT, cliente, fechas, urgencia y descripción del trabajo para tu revisión antes de guardar.');
+    setAnalysisDurationSec(null);
+    setLastPhotoStats(null);
     setPdfSuccessNotice(null);
     setPdfErrorNotice(null);
     setPdfErrorTechnical(null);
     setErrorMessage('');
 
+    if (modalBodyRef.current) {
+      modalBodyRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    const requestStartMs = performance.now();
     try {
       const payload = await extractWorkOrderFields({
         base64Data: pdfDataUrl,
         mimeType: 'application/pdf',
         fileName,
         sourceType: 'pdf',
+        onStatusChange: (status) => setAnalyzingStatusText(status),
       });
 
+      const elapsedSec = ((performance.now() - requestStartMs) / 1000).toFixed(1);
+      setAnalysisDurationSec(elapsedSec);
       applyExtractedFieldsToForm(payload, 'pdf');
     } catch (err: unknown) {
       displayExtractionError(
@@ -425,12 +450,15 @@ export const JobModal: React.FC<JobModalProps> = ({
     } finally {
       setIsAnalyzingPdf(false);
       setAnalyzingSource(null);
+      setAnalyzingStatusText('');
+      setAnalyzingSubText('');
     }
   };
 
   /**
-   * Ephemeral Mobile Photo Extraction via Gemini Flash (supports Vercel Vite env & backend /api route)
+   * Ephemeral Mobile Photo Extraction via Gemini (server-side API route)
    * Compresses the photo via canvas (max 1024px, image/jpeg 0.65), extracts ONLY the work order fields,
+   * reports live compression KB, automatic retry status, and exact latency,
    * and immediately discards the photo in memory without storing it in Firestore or localStorage.
    */
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -448,10 +476,18 @@ export const JobModal: React.FC<JobModalProps> = ({
 
     setIsAnalyzingPdf(true);
     setAnalyzingSource('photo');
+    setAnalyzingStatusText('Comprimiendo fotografía...');
+    setAnalyzingSubText('Redimensionando imagen (máx. 1024 px, JPEG 65%) antes de enviarla.');
+    setAnalysisDurationSec(null);
+    setLastPhotoStats(null);
     setPdfSuccessNotice(null);
     setPdfErrorNotice(null);
     setPdfErrorTechnical(null);
     setErrorMessage('');
+
+    if (modalBodyRef.current) {
+      modalBodyRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
 
     let ephemeralBase64 = '';
     try {
@@ -460,11 +496,35 @@ export const JobModal: React.FC<JobModalProps> = ({
       ephemeralBase64 = ephemeralPhoto.base64;
       inputEl.value = '';
 
+      setLastPhotoStats({
+        sizeKB: ephemeralPhoto.sizeKB,
+        width: ephemeralPhoto.width,
+        height: ephemeralPhoto.height,
+        wasCompressed: ephemeralPhoto.wasCompressed,
+      });
+
+      if (ephemeralPhoto.wasCompressed) {
+        setAnalyzingStatusText(`Foto comprimida: ${ephemeralPhoto.sizeKB} KB. Enviando a Gemini...`);
+        setAnalyzingSubText(
+          `Resolución: ${ephemeralPhoto.width}×${ephemeralPhoto.height} px · JPEG 65% (original: ${ephemeralPhoto.originalSizeKB} KB). La foto no se almacena.`
+        );
+      } else {
+        setAnalyzingStatusText(`Imagen lista: ${ephemeralPhoto.sizeKB} KB. Enviando a Gemini...`);
+        setAnalyzingSubText(
+          'El navegador no pudo recomprimir este formato; enviando directamente sin guardar la foto.'
+        );
+      }
+
+      const geminiStartMs = performance.now();
       const payload = await extractWorkOrderFields({
         base64Data: ephemeralBase64,
         mimeType: ephemeralPhoto.mimeType,
         sourceType: 'photo',
+        onStatusChange: (status) => setAnalyzingStatusText(status),
       });
+
+      const elapsedSec = ((performance.now() - geminiStartMs) / 1000).toFixed(1);
+      setAnalysisDurationSec(elapsedSec);
 
       // Overwrite transient string references immediately after extraction
       ephemeralPhoto.base64 = '';
@@ -482,6 +542,8 @@ export const JobModal: React.FC<JobModalProps> = ({
       inputEl.value = '';
       setIsAnalyzingPdf(false);
       setAnalyzingSource(null);
+      setAnalyzingStatusText('');
+      setAnalyzingSubText('');
     }
   };
 
@@ -785,18 +847,20 @@ export const JobModal: React.FC<JobModalProps> = ({
 
           {/* Multimodal Gemini PDF / Photo Auto-fill Status */}
           {isAnalyzingPdf && (
-            <div className="p-4 rounded-2xl bg-oterio-50/90 border border-oterio-200/90 flex items-center gap-3 animate-pulse">
+            <div className="p-4 rounded-2xl bg-oterio-50/90 border border-oterio-200/90 flex items-center gap-3">
               <Loader2 className="w-5 h-5 text-oterio-600 animate-spin shrink-0" />
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-bold text-oterio-950">
-                  {analyzingSource === 'photo'
-                    ? 'Analizando fotografía del parte con Gemini Flash...'
-                    : 'Analizando archivo PDF con Gemini Flash...'}
+                  {analyzingStatusText ||
+                    (analyzingSource === 'photo'
+                      ? 'Analizando fotografía del parte con Gemini...'
+                      : 'Analizando archivo PDF con Gemini...')}
                 </p>
-                <p className="text-[11px] text-oterio-700">
-                  {analyzingSource === 'photo'
-                    ? 'Extrayendo únicamente los datos del parte (la fotografía no se almacena ni local ni en la nube).'
-                    : 'Extrayendo Nº OT, cliente, fechas, urgencia y descripción del trabajo para tu revisión antes de guardar.'}
+                <p className="text-[11px] text-oterio-700 mt-0.5">
+                  {analyzingSubText ||
+                    (analyzingSource === 'photo'
+                      ? 'Extrayendo únicamente los datos del parte (la fotografía no se almacena ni local ni en la nube).'
+                      : 'Extrayendo Nº OT, cliente, fechas, urgencia y descripción del trabajo para tu revisión antes de guardar.')}
                 </p>
               </div>
             </div>
@@ -833,14 +897,28 @@ export const JobModal: React.FC<JobModalProps> = ({
 
           {pdfSuccessNotice && !isAnalyzingPdf && (
             <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-start justify-between gap-2 text-xs text-emerald-800 animate-in fade-in">
-              <div className="flex items-start gap-2">
+              <div className="flex items-start gap-2 min-w-0">
                 <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>{pdfSuccessNotice}</span>
+                <div className="min-w-0">
+                  <span>{pdfSuccessNotice}</span>
+                  {analysisDurationSec && (
+                    <p className="text-[11px] text-emerald-700/75 font-medium mt-1">
+                      Analizado en {analysisDurationSec} s
+                      {lastPhotoStats
+                        ? ` · ${lastPhotoStats.sizeKB} KB${
+                            lastPhotoStats.wasCompressed && lastPhotoStats.width > 0
+                              ? ` (${lastPhotoStats.width}×${lastPhotoStats.height} px)`
+                              : ''
+                          }`
+                        : ''}
+                    </p>
+                  )}
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setPdfSuccessNotice(null)}
-                className="text-emerald-600 hover:text-emerald-800 cursor-pointer"
+                className="text-emerald-600 hover:text-emerald-800 cursor-pointer shrink-0"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
