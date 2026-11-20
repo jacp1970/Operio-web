@@ -430,7 +430,7 @@ export const JobModal: React.FC<JobModalProps> = ({
 
   /**
    * Ephemeral Mobile Photo Extraction via Gemini Flash (supports Vercel Vite env & backend /api route)
-   * Compresses the photo via canvas (max 1600px, image/jpeg 0.75), extracts ONLY the work order fields,
+   * Compresses the photo via canvas (max 1024px, image/jpeg 0.65), extracts ONLY the work order fields,
    * and immediately discards the photo in memory without storing it in Firestore or localStorage.
    */
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {

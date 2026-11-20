@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 export interface ServerlessReq {
   method?: string;
@@ -39,6 +39,22 @@ function isRetryable503Or429(err: unknown): boolean {
   );
 }
 
+function isThinkingConfigError(err: unknown): boolean {
+  const status =
+    err && typeof err === 'object'
+      ? (err as Record<string, unknown>).status ||
+        (err as Record<string, unknown>).code ||
+        (err as Record<string, unknown>).statusCode
+      : undefined;
+  const msg = String(
+    err instanceof Error ? err.message : (err as { message?: string })?.message || err || ''
+  ).toLowerCase();
+  return (
+    (status === 400 || msg.includes('400') || msg.includes('invalid_argument')) &&
+    (msg.includes('thinkingbudget') || msg.includes('thinking_budget') || msg.includes('thinkinglevel') || msg.includes('thinking'))
+  );
+}
+
 async function generateWithRetry(
   ai: GoogleGenAI,
   requestParams: {
@@ -47,16 +63,29 @@ async function generateWithRetry(
   }
 ) {
   let lastError: unknown;
+  const activeConfig: Record<string, unknown> = { ...requestParams.config };
+  let thinkingFallbackStep = 0;
 
   for (let attempt = 0; attempt <= MAX_RETRIES_ON_TRANSIENT; attempt++) {
     try {
       return await ai.models.generateContent({
         model: PRIMARY_GEMINI_MODEL,
         contents: requestParams.contents,
-        config: requestParams.config,
+        config: activeConfig,
       });
     } catch (err: unknown) {
       lastError = err;
+
+      if (isThinkingConfigError(err) && thinkingFallbackStep < 2) {
+        thinkingFallbackStep++;
+        activeConfig.thinkingConfig =
+          thinkingFallbackStep === 1
+            ? { thinkingLevel: ThinkingLevel.MINIMAL }
+            : { thinkingLevel: ThinkingLevel.LOW };
+        attempt--;
+        continue;
+      }
+
       if (!isRetryable503Or429(err)) {
         throw err;
       }
@@ -236,11 +265,6 @@ export async function runServerlessWorkOrderExtraction(
     const fileName = typeof body.fileName === 'string' ? body.fileName : undefined;
     const ai = getGeminiClient();
 
-    const docDescription =
-      sourceType === 'photo'
-        ? 'esta fotografía tomada con el móvil de un parte u orden de trabajo en papel, albarán, hoja de taller o plano técnico'
-        : `este documento PDF${fileName ? ` (nombre de archivo: "${fileName}")` : ''} correspondiente a una orden de trabajo, parte, pedido o plano técnico de taller`;
-
     const response = await generateWithRetry(ai, {
       contents: {
         parts: [
@@ -251,23 +275,18 @@ export async function runServerlessWorkOrderExtraction(
             },
           },
           {
-            text: `Analiza de forma visual y textual ${docDescription}.
-
-Extrae EXCLUSIVAMENTE estos 6 campos en JSON estricto siguiendo el esquema:
-1. ot: Número o código de orden de trabajo (busca etiquetas como Nº OT, O.T., Orden de trabajo, Parte, Nº Parte, Referencia, Ref., Expediente o similar, tanto impreso como manuscrito). Si no figura en el documento, devuelve null.
-2. client: Nombre, razón social o empresa del cliente destinatario del trabajo (no confundir con la empresa emisora/taller si aparecen ambas). Si no figura, devuelve null.
-3. createdAt: Fecha de entrada, recepción, apertura, emisión o alta del trabajo en formato YYYY-MM-DD. Si no figura explícitamente en el documento, devuelve null.
-4. deliveryDate: Fecha de entrega, plazo de entrega, fecha límite, vencimiento, entrega prevista, fecha requerida o compromiso de entrega en formato YYYY-MM-DD ÚNICAMENTE si aparece explícitamente en el documento. Si no existe fecha de entrega explícita, devuelve null.
-5. notes: Descripción del trabajo limpia y estructurada con las tareas, piezas, materiales, operaciones u observaciones técnicas a realizar. Si hay varias líneas o conceptos de trabajo, unifícalos en un solo texto con saltos de línea claros. Si no hay descripción técnica, devuelve null.
-6. isUrgent: Booleano (true/false). Devuelve true ÚNICAMENTE si el documento refleja de forma explícita que el trabajo es urgente. En caso contrario, devuelve false.
-
-Si algún campo de texto o fecha no aparece en el documento, devuelve null.`,
+            text: `Extrae los datos de esta orden de trabajo (${sourceType === 'photo' ? 'foto' : `PDF${fileName ? ` "${fileName}"` : ''}`}) en JSON estricto. Sin inventar datos; usa null si un campo no aparece.
+- ot: Nº OT / Parte / Ref.
+- client: Cliente destinatario.
+- createdAt: Fecha de entrada (YYYY-MM-DD).
+- deliveryDate: Fecha de entrega explícita (YYYY-MM-DD) o null.
+- notes: Breve descripción técnica del trabajo.
+- isUrgent: true solo si indica urgencia explícita, si no false.`,
           },
         ],
       },
       config: {
-        systemInstruction:
-          'Eres un asistente especializado en digitalización de órdenes de trabajo y partes técnicos industriales en español. Extraes únicamente los 6 campos solicitados sin inventar datos ni deducir fechas ausentes.',
+        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,

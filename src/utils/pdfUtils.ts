@@ -67,7 +67,7 @@ export function readPhotoAsEphemeralBase64(
 
       img.onload = () => {
         try {
-          const MAX_DIMENSION = 1600;
+          const MAX_DIMENSION = 1024;
           let width = img.naturalWidth || img.width;
           let height = img.naturalHeight || img.height;
 
@@ -103,7 +103,7 @@ export function readPhotoAsEphemeralBase64(
           ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0, width, height);
 
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.75);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.65);
 
           // Release canvas memory after encoding completes
           canvas.width = 0;
