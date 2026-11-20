@@ -157,8 +157,7 @@ interface ExtractedWorkOrderFields {
   isUrgent: boolean;
 }
 
-const PRIMARY_GEMINI_MODEL = 'gemini-2.5-flash';
-const FALLBACK_GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite'] as const;
+const PRIMARY_GEMINI_MODEL = 'gemini-3.8-flash';
 const MAX_RETRIES_ON_TRANSIENT = 3;
 const RETRY_DELAY_MS = 2000;
 
@@ -181,7 +180,7 @@ function isRetryable503Or429(err: any): boolean {
   );
 }
 
-async function generateWithRetryAndFallback(
+async function generateWithRetry(
   ai: GoogleGenAI,
   requestParams: {
     contents: { parts: Array<Record<string, unknown>> };
@@ -190,7 +189,7 @@ async function generateWithRetryAndFallback(
 ) {
   let lastError: any;
 
-  // 1. Primary model (gemini-2.5-flash) with up to 3 automatic retries waiting 2s on 503 / 429
+  // Retry primary model (gemini-3.8-flash) up to 3 times waiting 2s on 503 / 429
   for (let attempt = 0; attempt <= MAX_RETRIES_ON_TRANSIENT; attempt++) {
     try {
       return await ai.models.generateContent({
@@ -209,22 +208,6 @@ async function generateWithRetryAndFallback(
         );
         await sleep(RETRY_DELAY_MS);
       }
-    }
-  }
-
-  // 2. Final attempt with backup fallback model (gemini-2.5-flash-lite)
-  for (const fallbackModel of FALLBACK_GEMINI_MODELS) {
-    try {
-      console.warn(
-        `[Server Gemini] ${PRIMARY_GEMINI_MODEL} falló tras ${MAX_RETRIES_ON_TRANSIENT} reintentos. Probando modelo de respaldo ${fallbackModel}...`
-      );
-      return await ai.models.generateContent({
-        model: fallbackModel,
-        contents: requestParams.contents,
-        config: requestParams.config,
-      });
-    } catch (fallbackErr: any) {
-      lastError = fallbackErr;
     }
   }
 
@@ -265,7 +248,7 @@ Extrae EXCLUSIVAMENTE estos 6 campos en JSON estricto siguiendo el esquema:
 Si algún campo de texto o fecha no aparece en el documento, devuelve null.`,
   };
 
-  const response = await generateWithRetryAndFallback(ai, {
+  const response = await generateWithRetry(ai, {
     contents: { parts: [mediaPart, textPart] },
     config: {
       systemInstruction:
@@ -388,7 +371,7 @@ function handleGeminiRouteError(err: any, res: express.Response, sourceLabel: st
   });
 }
 
-// Multimodal PDF extraction endpoint using Gemini Flash (gemini-4-hydrogen)
+// Multimodal PDF extraction endpoint using Gemini (gemini-3.8-flash)
 app.post('/api/extract-work-order-pdf', async (req, res) => {
   try {
     const { pdfBase64, fileName } = req.body || {};
@@ -419,7 +402,7 @@ app.post('/api/extract-work-order-pdf', async (req, res) => {
   }
 });
 
-// Ephemeral mobile photo extraction endpoint using Gemini Flash (gemini-4-hydrogen)
+// Ephemeral mobile photo extraction endpoint using Gemini (gemini-3.8-flash)
 // Processes the image strictly in memory to extract work order fields and immediately discards it.
 app.post('/api/extract-work-order-photo', async (req, res) => {
   try {

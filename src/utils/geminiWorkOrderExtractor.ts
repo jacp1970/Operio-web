@@ -21,11 +21,7 @@ export class WorkOrderExtractionError extends Error {
 
 export const MISSING_API_KEY_MESSAGE = 'Falta configurar la API Key de Gemini';
 
-export const PRIMARY_GEMINI_MODEL = 'gemini-2.5-flash';
-export const FALLBACK_GEMINI_MODELS = [
-  'gemini-2.5-flash-lite',
-  'gemini-3.1-flash-lite',
-] as const;
+export const PRIMARY_GEMINI_MODEL = 'gemini-3.8-flash';
 
 const MAX_RETRIES_ON_TRANSIENT = 3;
 const RETRY_DELAY_MS = 2000;
@@ -150,7 +146,7 @@ function normalizeTextField(value: unknown): string | null {
   return trimmed;
 }
 
-async function generateWithRetryAndFallback(
+async function generateWithRetry(
   ai: GoogleGenAI,
   requestParams: {
     contents: { parts: Array<Record<string, unknown>> };
@@ -159,7 +155,7 @@ async function generateWithRetryAndFallback(
 ) {
   let lastError: unknown;
 
-  // 1. Try primary model (gemini-2.5-flash) with up to 3 automatic retries on 503 / 429 (waiting 2s each)
+  // Retry primary model (gemini-3.8-flash) up to 3 times on 503 / 429 (waiting 2s each)
   for (let attempt = 0; attempt <= MAX_RETRIES_ON_TRANSIENT; attempt++) {
     try {
       return await ai.models.generateContent({
@@ -178,22 +174,6 @@ async function generateWithRetryAndFallback(
         );
         await sleep(RETRY_DELAY_MS);
       }
-    }
-  }
-
-  // 2. If primary model still fails with 503/429 after retries, try backup fallback model
-  for (const fallbackModel of FALLBACK_GEMINI_MODELS) {
-    try {
-      console.warn(
-        `[Gemini] ${PRIMARY_GEMINI_MODEL} agotó los ${MAX_RETRIES_ON_TRANSIENT} reintentos. Intentando con modelo de respaldo ${fallbackModel}...`
-      );
-      return await ai.models.generateContent({
-        model: fallbackModel,
-        contents: requestParams.contents,
-        config: requestParams.config,
-      });
-    } catch (fallbackErr: unknown) {
-      lastError = fallbackErr;
     }
   }
 
@@ -245,7 +225,7 @@ Extrae EXCLUSIVAMENTE estos 6 campos en JSON estricto siguiendo el esquema:
 Si algún campo de texto o fecha no aparece en el documento, devuelve null.`,
   };
 
-  const response = await generateWithRetryAndFallback(ai, {
+  const response = await generateWithRetry(ai, {
     contents: { parts: [mediaPart, textPart] },
     config: {
       systemInstruction:

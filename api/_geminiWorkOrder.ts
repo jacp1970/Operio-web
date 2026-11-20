@@ -11,8 +11,7 @@ export interface ServerlessRes {
   setHeader?: (name: string, value: string) => void;
 }
 
-const PRIMARY_GEMINI_MODEL = 'gemini-2.5-flash';
-const FALLBACK_GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite'] as const;
+const PRIMARY_GEMINI_MODEL = 'gemini-3.8-flash';
 const MAX_RETRIES_ON_TRANSIENT = 3;
 const RETRY_DELAY_MS = 2000;
 
@@ -40,7 +39,7 @@ function isRetryable503Or429(err: unknown): boolean {
   );
 }
 
-async function generateWithRetryAndFallback(
+async function generateWithRetry(
   ai: GoogleGenAI,
   requestParams: {
     contents: { parts: Array<Record<string, unknown>> };
@@ -67,21 +66,6 @@ async function generateWithRetryAndFallback(
         );
         await sleep(RETRY_DELAY_MS);
       }
-    }
-  }
-
-  for (const fallbackModel of FALLBACK_GEMINI_MODELS) {
-    try {
-      console.warn(
-        `[Vercel Gemini] ${PRIMARY_GEMINI_MODEL} falló tras ${MAX_RETRIES_ON_TRANSIENT} reintentos. Probando modelo de respaldo ${fallbackModel}...`
-      );
-      return await ai.models.generateContent({
-        model: fallbackModel,
-        contents: requestParams.contents,
-        config: requestParams.config,
-      });
-    } catch (fallbackErr: unknown) {
-      lastError = fallbackErr;
     }
   }
 
@@ -257,7 +241,7 @@ export async function runServerlessWorkOrderExtraction(
         ? 'esta fotografía tomada con el móvil de un parte u orden de trabajo en papel, albarán, hoja de taller o plano técnico'
         : `este documento PDF${fileName ? ` (nombre de archivo: "${fileName}")` : ''} correspondiente a una orden de trabajo, parte, pedido o plano técnico de taller`;
 
-    const response = await generateWithRetryAndFallback(ai, {
+    const response = await generateWithRetry(ai, {
       contents: {
         parts: [
           {
