@@ -47,8 +47,8 @@ export interface CompressedPhotoResult {
   wasCompressed: boolean;
 }
 
-const MAX_PHOTO_DIMENSION = 1024;
-const PHOTO_JPEG_QUALITY = 0.65;
+const MAX_PHOTO_DIMENSION = 1200;
+const PHOTO_JPEG_QUALITY = 0.75;
 
 function calculateBase64Bytes(dataUrl: string): number {
   const commaIdx = dataUrl.indexOf(',');

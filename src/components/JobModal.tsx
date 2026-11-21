@@ -452,6 +452,7 @@ export const JobModal: React.FC<JobModalProps> = ({
         mimeType: 'application/pdf',
         fileName,
         sourceType: 'pdf',
+        onStatusChange: (status) => setAnalyzingStatusText(status),
       });
 
       const elapsedSec = ((performance.now() - requestStartMs) / 1000).toFixed(1);
@@ -471,9 +472,9 @@ export const JobModal: React.FC<JobModalProps> = ({
   };
 
   /**
-   * Ephemeral Mobile Photo Extraction directly via @google/genai in the browser (VITE_GEMINI_API_KEY)
-   * Compresses the photo via canvas (max 1024px, image/jpeg 0.65), enforces a 20s timeout,
-   * extracts ONLY the work order fields, and immediately discards the photo in memory.
+   * Ephemeral Mobile Photo Extraction directly via fetch() to the Google Gemini REST API
+   * Compresses the photo via canvas (max 1200px, image/jpeg 0.75), uses gemini-3.8-flash-lite (10s)
+   * with automatic fallback to gemini-3.8-flash (12s), and immediately discards the photo in memory.
    */
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputEl = e.target;
@@ -491,7 +492,7 @@ export const JobModal: React.FC<JobModalProps> = ({
     setIsAnalyzingPdf(true);
     setAnalyzingSource('photo');
     setAnalyzingStatusText('Comprimiendo fotografía...');
-    setAnalyzingSubText('Redimensionando imagen (máx. 1024 px, JPEG 65%) antes de enviarla.');
+    setAnalyzingSubText('Redimensionando imagen (máx. 1200 px, JPEG 75%) antes de enviarla.');
     setAnalysisDurationSec(null);
     setLastPhotoStats(null);
     setPdfSuccessNotice(null);
@@ -524,7 +525,7 @@ export const JobModal: React.FC<JobModalProps> = ({
       if (ephemeralPhoto.wasCompressed) {
         setAnalyzingStatusText(`Foto comprimida: ${ephemeralPhoto.sizeKB} KB. Enviando a Gemini...`);
         setAnalyzingSubText(
-          `Resolución: ${ephemeralPhoto.width}×${ephemeralPhoto.height} px · JPEG 65% (original: ${ephemeralPhoto.originalSizeKB} KB). La foto no se almacena.`
+          `Resolución: ${ephemeralPhoto.width}×${ephemeralPhoto.height} px · JPEG 75% (original: ${ephemeralPhoto.originalSizeKB} KB). La foto no se almacena.`
         );
       } else {
         setAnalyzingStatusText(`Imagen lista: ${ephemeralPhoto.sizeKB} KB. Enviando a Gemini...`);
@@ -538,6 +539,7 @@ export const JobModal: React.FC<JobModalProps> = ({
         base64Data: ephemeralBase64,
         mimeType: ephemeralPhoto.mimeType,
         sourceType: 'photo',
+        onStatusChange: (status) => setAnalyzingStatusText(status),
       });
 
       const elapsedSec = ((performance.now() - geminiStartMs) / 1000).toFixed(1);
@@ -887,7 +889,7 @@ export const JobModal: React.FC<JobModalProps> = ({
                 </div>
               </div>
               <div className="shrink-0 px-2.5 py-1 rounded-lg bg-white/90 border border-oterio-200 font-mono text-xs font-bold text-oterio-800 tabular-nums">
-                {liveAnalysisSeconds.toFixed(1)} s / 15 s
+                {liveAnalysisSeconds.toFixed(1)} s
               </div>
             </div>
           )}
