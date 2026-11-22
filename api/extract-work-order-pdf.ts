@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 
 interface ServerlessReq {
   method?: string;
+  headers?: Record<string, string | string[] | undefined>;
   body?: unknown;
   [Symbol.asyncIterator]?: () => AsyncIterator<Uint8Array | string>;
 }
@@ -15,10 +16,10 @@ interface ServerlessRes {
 }
 
 const SERVER_CANDIDATE_MODELS = [
-  'gemini-4-hydrogen',
-  'gemini-3.1-flash-lite',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-4-hydrogen',
 ] as const;
 
 let cachedServerModel: string | null = null;
@@ -72,6 +73,31 @@ async function readJsonBody(req: ServerlessReq): Promise<Record<string, unknown>
   }
 
   return {};
+}
+
+function resolveApiKey(req: ServerlessReq, body: Record<string, unknown>): string | null {
+  const headerVal = req.headers?.['x-gemini-api-key'];
+  const headerKey = Array.isArray(headerVal) ? headerVal[0] : headerVal;
+  const bodyKey = typeof body.apiKey === 'string' ? body.apiKey : '';
+
+  const candidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.VITE_GEMINI_API_KEY,
+    process.env.API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.VITE_API_KEY,
+    process.env.NEXT_PUBLIC_GEMINI_API_KEY,
+    headerKey,
+    bodyKey,
+  ];
+
+  for (const candidate of candidates) {
+    const trimmed = typeof candidate === 'string' ? candidate.trim() : '';
+    if (trimmed && trimmed !== 'MY_GEMINI_API_KEY') {
+      return trimmed;
+    }
+  }
+  return null;
 }
 
 function extractRawBase64(input: string): string {
@@ -142,16 +168,14 @@ export default async function handler(req: ServerlessReq, res: ServerlessRes) {
       });
     }
 
-    const apiKey =
-      process.env.GEMINI_API_KEY?.trim() ||
-      process.env.API_KEY?.trim();
+    const apiKey = resolveApiKey(req, body);
 
     if (!apiKey) {
       return sendJson(res, 500, {
         code: 'MISSING_GEMINI_API_KEY',
         error: 'Falta configurar la API Key de Gemini',
         technicalError:
-          'MISSING_GEMINI_API_KEY: No se encontró GEMINI_API_KEY en las variables de entorno del servidor.',
+          'MISSING_GEMINI_API_KEY: Configura VITE_GEMINI_API_KEY o GEMINI_API_KEY en las variables de entorno.',
       });
     }
 
@@ -193,6 +217,8 @@ export default async function handler(req: ServerlessReq, res: ServerlessRes) {
             ],
           },
           config: {
+            temperature: 0,
+            maxOutputTokens: 512,
             responseMimeType: 'application/json',
             responseSchema: {
               type: Type.OBJECT,

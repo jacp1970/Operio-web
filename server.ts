@@ -25,10 +25,23 @@ const SERVER_CANDIDATE_MODELS = [
 
 let cachedServerModel: string | null = null;
 
-function getGeminiClient(): GoogleGenAI {
-  const apiKey =
-    process.env.GEMINI_API_KEY?.trim() ||
-    process.env.API_KEY?.trim();
+function getGeminiClient(fallbackKey?: string): GoogleGenAI {
+  const candidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.VITE_GEMINI_API_KEY,
+    process.env.API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.VITE_API_KEY,
+    fallbackKey,
+  ];
+  let apiKey = '';
+  for (const c of candidates) {
+    const trimmed = typeof c === 'string' ? c.trim() : '';
+    if (trimmed && trimmed !== 'MY_GEMINI_API_KEY') {
+      apiKey = trimmed;
+      break;
+    }
+  }
   if (!apiKey) {
     throw new Error('MISSING_GEMINI_API_KEY');
   }
@@ -136,8 +149,9 @@ function detectMimeTypeFromBase64(cleanBase64: string, fallbackMimeType: string)
 async function extractWorkOrderOnServer(params: {
   cleanBase64: string;
   mimeType: string;
+  fallbackKey?: string;
 }) {
-  const ai = getGeminiClient();
+  const ai = getGeminiClient(params.fallbackKey);
 
   const modelsToTry: string[] = [];
   if (cachedServerModel) {
@@ -217,7 +231,8 @@ app.get('/api/health', (_req, res) => {
 
 app.post('/api/extract-work-order-pdf', async (req, res) => {
   try {
-    const { pdfBase64 } = req.body || {};
+    const { pdfBase64, apiKey } = req.body || {};
+    const headerKey = typeof req.headers['x-gemini-api-key'] === 'string' ? req.headers['x-gemini-api-key'] : undefined;
     if (!pdfBase64 || typeof pdfBase64 !== 'string') {
       return res.status(400).json({ error: 'No se recibió ningún archivo PDF válido para analizar.' });
     }
@@ -228,6 +243,7 @@ app.post('/api/extract-work-order-pdf', async (req, res) => {
     const result = await extractWorkOrderOnServer({
       cleanBase64,
       mimeType: 'application/pdf',
+      fallbackKey: typeof apiKey === 'string' ? apiKey : headerKey,
     });
     return res.json(result);
   } catch (err: any) {
@@ -248,7 +264,8 @@ app.post('/api/extract-work-order-pdf', async (req, res) => {
 
 app.post('/api/extract-work-order-photo', async (req, res) => {
   try {
-    const { imageBase64, mimeType } = req.body || {};
+    const { imageBase64, mimeType, apiKey } = req.body || {};
+    const headerKey = typeof req.headers['x-gemini-api-key'] === 'string' ? req.headers['x-gemini-api-key'] : undefined;
     if (!imageBase64 || typeof imageBase64 !== 'string') {
       return res.status(400).json({ error: 'No se recibió ninguna fotografía válida para analizar.' });
     }
@@ -263,6 +280,7 @@ app.post('/api/extract-work-order-photo', async (req, res) => {
     const result = await extractWorkOrderOnServer({
       cleanBase64,
       mimeType: resolvedMimeType,
+      fallbackKey: typeof apiKey === 'string' ? apiKey : headerKey,
     });
     return res.json(result);
   } catch (err: any) {
