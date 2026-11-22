@@ -50,6 +50,22 @@ export interface CompressedPhotoResult {
 const MAX_PHOTO_DIMENSION = 1200;
 const PHOTO_JPEG_QUALITY = 0.75;
 
+function withTimeout<T>(promise: Promise<T>, ms: number, errorCode: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(errorCode)), ms);
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 function calculateBase64Bytes(dataUrl: string): number {
   const commaIdx = dataUrl.indexOf(',');
   const raw = (commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl).replace(/\s/g, '');
@@ -98,7 +114,11 @@ function drawAndCompressToJpeg(
   canvas.width = 0;
   canvas.height = 0;
 
-  if (!compressedDataUrl || !compressedDataUrl.startsWith('data:image/jpeg;base64,') || compressedDataUrl.length <= 64) {
+  if (
+    !compressedDataUrl ||
+    !compressedDataUrl.startsWith('data:image/jpeg;base64,') ||
+    compressedDataUrl.length <= 128
+  ) {
     throw new Error('CANVAS_ENCODE_FAILED');
   }
 
@@ -121,7 +141,7 @@ function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
       img.onload = null;
       img.onerror = null;
       reject(new Error('IMAGE_DECODE_TIMEOUT'));
-    }, 8000);
+    }, 6000);
     img.onload = () => {
       clearTimeout(timer);
       resolve(img);
@@ -135,53 +155,40 @@ function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('No se pudo leer la fotografía capturada desde la cámara.'));
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : '';
-      if (!result) {
-        reject(new Error('La fotografía capturada está vacía.'));
-        return;
-      }
-      resolve(result);
-    };
-    reader.readAsDataURL(file);
-  });
+  return withTimeout(
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () =>
+        reject(new Error('No se pudo leer la fotografía capturada desde la cámara.'));
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : '';
+        if (!result) {
+          reject(new Error('La fotografía capturada está vacía.'));
+          return;
+        }
+        resolve(result);
+      };
+      reader.readAsDataURL(file);
+    }),
+    6000,
+    'FILE_READER_TIMEOUT'
+  );
 }
 
 /**
  * Reads and compresses an image file (e.g., from a mobile camera capture) into an ephemeral
- * in-memory JPEG Base64 string (max 1024px longest side, JPEG quality 0.65).
- * Uses createImageBitmap first (lowest memory + respects EXIF orientation on mobile),
- * then URL.createObjectURL + Image, then FileReader + Image so mobile camera captures
- * are reliably compressed rather than sent as raw multi-MB originals.
+ * in-memory JPEG Base64 string (max 1200px longest side, JPEG quality 0.75).
+ * Prioritizes URL.createObjectURL + Image (hardware-accelerated on iOS Safari & Android Chrome),
+ * then createImageBitmap with timeout, then FileReader + Image.
  */
 export async function readPhotoAsEphemeralBase64(file: File): Promise<CompressedPhotoResult> {
-  const originalSizeKB = Math.max(1, Math.round(file.size / 1024));
-
-  // Strategy 1: createImageBitmap (best for large mobile camera photos, avoids giant DataURL allocation)
-  if (typeof createImageBitmap === 'function') {
-    let bitmap: ImageBitmap | null = null;
-    try {
-      bitmap = await createImageBitmap(file);
-      if (bitmap.width > 0 && bitmap.height > 0) {
-        return drawAndCompressToJpeg(bitmap, bitmap.width, bitmap.height, originalSizeKB);
-      }
-    } catch {
-      // Fall through to object URL decoding
-    } finally {
-      if (bitmap) {
-        try {
-          bitmap.close();
-        } catch {
-          // Ignore close errors
-        }
-      }
-    }
+  if (!file || file.size === 0) {
+    throw new Error('La fotografía capturada desde la cámara está vacía (0 bytes).');
   }
 
-  // Strategy 2: Object URL + HTMLImageElement (memory-efficient fallback)
+  const originalSizeKB = Math.max(1, Math.round(file.size / 1024));
+
+  // Strategy 1: Object URL + HTMLImageElement (most reliable across iOS Safari & Android Chrome camera captures)
   let objectUrl: string | null = null;
   try {
     objectUrl = URL.createObjectURL(file);
@@ -194,10 +201,31 @@ export async function readPhotoAsEphemeralBase64(file: File): Promise<Compressed
       return result;
     }
   } catch {
-    // Fall through to FileReader strategy
+    // Fall through to Strategy 2
   } finally {
     if (objectUrl) {
       URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  // Strategy 2: createImageBitmap with strict 5s timeout
+  if (typeof createImageBitmap === 'function') {
+    let bitmap: ImageBitmap | null = null;
+    try {
+      bitmap = await withTimeout(createImageBitmap(file), 5000, 'BITMAP_TIMEOUT');
+      if (bitmap.width > 0 && bitmap.height > 0) {
+        return drawAndCompressToJpeg(bitmap, bitmap.width, bitmap.height, originalSizeKB);
+      }
+    } catch {
+      // Fall through to FileReader strategy
+    } finally {
+      if (bitmap) {
+        try {
+          bitmap.close();
+        } catch {
+          // Ignore close errors
+        }
+      }
     }
   }
 
@@ -213,7 +241,7 @@ export async function readPhotoAsEphemeralBase64(file: File): Promise<Compressed
       return result;
     }
   } catch {
-    // Only reached if the browser cannot decode the image format at all (e.g. raw HEIC on unsupported browser)
+    // Only reached if the browser cannot decode the image format onto canvas (e.g. raw HEIC)
   }
 
   const fallbackMime = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';

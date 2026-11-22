@@ -354,11 +354,11 @@ export const JobModal: React.FC<JobModalProps> = ({
         : '';
     const extractedIsUrgent = payload.isUrgent === true;
 
-    setOt(extractedOt);
-    setClient(extractedClient);
-    setCreatedAt(extractedCreatedAt);
-    setDeliveryDate(extractedDeliveryDate);
-    setNotes(extractedNotes);
+    if (extractedOt) setOt(extractedOt);
+    if (extractedClient) setClient(extractedClient);
+    if (extractedCreatedAt) setCreatedAt(extractedCreatedAt);
+    if (extractedDeliveryDate) setDeliveryDate(extractedDeliveryDate);
+    if (extractedNotes) setNotes(extractedNotes);
     setIsUrgent(extractedIsUrgent);
     setHasAnalyzedPdf(true);
 
@@ -1072,53 +1072,65 @@ export const JobModal: React.FC<JobModalProps> = ({
                       <span>Subir archivo PDF</span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => photoInputRef.current?.click()}
-                      disabled={isAnalyzingPdf}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-graphite-900 hover:bg-graphite-800 text-white text-xs font-bold cursor-pointer shadow-xs transition-all active:scale-95 disabled:opacity-50"
+                    <label
+                      htmlFor="oterio-mobile-photo-input"
+                      onClick={(e) => {
+                        if (isAnalyzingPdf) {
+                          e.preventDefault();
+                        }
+                      }}
+                      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-graphite-900 hover:bg-graphite-800 text-white text-xs font-bold shadow-xs transition-all active:scale-95 touch-manipulation select-none ${
+                        isAnalyzingPdf ? 'opacity-50 pointer-events-none' : 'cursor-pointer'
+                      }`}
                     >
                       <Camera className="w-4 h-4 text-oterio-400" />
                       <span>Autorellenar con foto (Móvil)</span>
-                    </button>
+                    </label>
 
                     <input
                       ref={fileInputRef}
                       type="file"
                       accept="application/pdf,.pdf"
                       onChange={handlePdfUpload}
-                      className="hidden"
+                      className="sr-only"
                     />
                   </div>
                 )}
               </div>
             )}
 
-            {/* Hidden camera input + option to scan photo even if a PDF is already attached */}
+            {/* Mobile camera input + option to scan photo even if a PDF is already attached */}
             {(isAdmin || (isCreating && canCreateJob)) && (
               <>
                 <input
+                  id="oterio-mobile-photo-input"
                   ref={photoInputRef}
                   type="file"
                   accept="image/*"
                   capture="environment"
+                  disabled={isAnalyzingPdf}
                   onChange={handlePhotoCapture}
-                  className="hidden"
+                  className="sr-only"
                 />
                 {currentAttachment && (
                   <div className="mt-3 pt-2.5 border-t border-graphite-200/80 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[11px] text-graphite-500">
                       ¿Tienes también un parte en papel? Escanea sus datos sin guardar la foto:
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => photoInputRef.current?.click()}
-                      disabled={isAnalyzingPdf}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-graphite-900 hover:bg-graphite-800 text-white text-[11px] font-bold cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                    <label
+                      htmlFor="oterio-mobile-photo-input"
+                      onClick={(e) => {
+                        if (isAnalyzingPdf) {
+                          e.preventDefault();
+                        }
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-graphite-900 hover:bg-graphite-800 text-white text-[11px] font-bold transition-all active:scale-95 touch-manipulation select-none ${
+                        isAnalyzingPdf ? 'opacity-50 pointer-events-none' : 'cursor-pointer'
+                      }`}
                     >
                       <Camera className="w-3.5 h-3.5 text-oterio-400" />
                       <span>Autorellenar con foto</span>
-                    </button>
+                    </label>
                   </div>
                 )}
               </>
