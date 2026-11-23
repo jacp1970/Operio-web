@@ -21,7 +21,10 @@ import {
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 import { validateDniOrNie } from '../utils/cifValidation';
-import { generateAndDownloadUserJobsPdf } from '../utils/userJobsPdfGenerator';
+import {
+  generateAndDownloadUserJobsPdf,
+  sortUserJobsForPdf,
+} from '../utils/userJobsPdfGenerator';
 
 export const UsersView: React.FC = () => {
   const {
@@ -211,15 +214,10 @@ export const UsersView: React.FC = () => {
   };
 
   const getUserAssignedActiveJobs = (userId: string) => {
-    return workOrders
-      .filter((wo) => wo.assignedOperatorId === userId && !getStatus(wo.statusId)?.isCompleted)
-      .slice()
-      .sort((a, b) => {
-        const posA = a.orderPosition !== undefined ? a.orderPosition : 999999;
-        const posB = b.orderPosition !== undefined ? b.orderPosition : 999999;
-        if (posA !== posB) return posA - posB;
-        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-      });
+    const active = workOrders.filter(
+      (wo) => wo.assignedOperatorId === userId && !getStatus(wo.statusId)?.isCompleted
+    );
+    return sortUserJobsForPdf(active, getDepartmentName);
   };
 
   const handleDownloadUserJobsPdf = (targetUser: User) => {

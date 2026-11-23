@@ -53,6 +53,140 @@ function sanitizeFileName(raw: string): string {
     .toLowerCase();
 }
 
+function extractIdTimestamp(id?: string): number {
+  if (!id) return 0;
+  const match = id.match(/wo-(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function parseCreationTimestamp(createdAt?: string): number {
+  if (!createdAt || !createdAt.trim()) return Number.MAX_SAFE_INTEGER;
+  const trimmed = createdAt.trim();
+  const ymdMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (ymdMatch) {
+    const utcMs = Date.UTC(
+      Number(ymdMatch[1]),
+      Number(ymdMatch[2]) - 1,
+      Number(ymdMatch[3])
+    );
+    if (Number.isFinite(utcMs)) return utcMs;
+  }
+  const parsed = new Date(trimmed).getTime();
+  return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Determines which jobs in the list have an effective operator-assigned custom order.
+ * - Explicitly ordered jobs have `hasCustomOrder === true` and a finite `orderPosition`.
+ * - Legacy jobs (where `hasCustomOrder === undefined`) only count as custom-ordered if
+ *   their `orderPosition` sequence contains an inversion relative to their `wo-<timestamp>`
+ *   creation sequence (distinguishing manual reorders from initial auto-incremented positions).
+ */
+function getEffectiveCustomOrderedJobIds(jobs: WorkOrder[]): Set<string> {
+  const customOrderedIds = new Set<string>();
+
+  const explicitOrdered = jobs.filter(
+    (j) =>
+      j.hasCustomOrder === true &&
+      typeof j.orderPosition === 'number' &&
+      Number.isFinite(j.orderPosition)
+  );
+  if (explicitOrdered.length > 0) {
+    explicitOrdered.forEach((j) => customOrderedIds.add(j.id));
+    return customOrderedIds;
+  }
+
+  const legacyCandidates = jobs.filter(
+    (j) =>
+      j.hasCustomOrder === undefined &&
+      typeof j.orderPosition === 'number' &&
+      Number.isFinite(j.orderPosition)
+  );
+
+  if (legacyCandidates.length > 1) {
+    const sortedByIdTime = [...legacyCandidates].sort(
+      (a, b) => extractIdTimestamp(a.id) - extractIdTimestamp(b.id)
+    );
+    let hasInversion = false;
+    for (let i = 1; i < sortedByIdTime.length; i++) {
+      if (
+        (sortedByIdTime[i].orderPosition as number) <
+        (sortedByIdTime[i - 1].orderPosition as number)
+      ) {
+        hasInversion = true;
+        break;
+      }
+    }
+    if (hasInversion) {
+      legacyCandidates.forEach((j) => customOrderedIds.add(j.id));
+    }
+  }
+
+  return customOrderedIds;
+}
+
+/**
+ * Sorts work orders assigned to an operator for PDF export:
+ * 1. First by Department (alphabetical, with unassigned department at the end).
+ * 2. Second by the custom order assigned by the operator (`orderPosition` when assigned).
+ * 3. Third (if no custom order has been assigned) by Creation Date (`createdAt`).
+ */
+export function sortUserJobsForPdf(
+  jobs: WorkOrder[],
+  getDepartmentName: (departmentId: string) => string
+): WorkOrder[] {
+  const customOrderedIds = getEffectiveCustomOrderedJobIds(jobs);
+
+  return [...jobs].sort((a, b) => {
+    // 1. Primero por Departamento
+    const deptA = (getDepartmentName(a.departmentId) || '').trim();
+    const deptB = (getDepartmentName(b.departmentId) || '').trim();
+
+    if (Boolean(deptA) !== Boolean(deptB)) {
+      return deptA ? -1 : 1;
+    }
+    if (deptA && deptB) {
+      const deptCmp = deptA.localeCompare(deptB, 'es', {
+        sensitivity: 'base',
+        numeric: true,
+      });
+      if (deptCmp !== 0) return deptCmp;
+    }
+    if ((a.departmentId || '') !== (b.departmentId || '')) {
+      return (a.departmentId || '').localeCompare(b.departmentId || '');
+    }
+
+    // 2. Segundo por el orden asignado por el operario (si lo tiene asignado)
+    const hasCustomA = customOrderedIds.has(a.id);
+    const hasCustomB = customOrderedIds.has(b.id);
+
+    if (hasCustomA && hasCustomB) {
+      const posDiff = (a.orderPosition as number) - (b.orderPosition as number);
+      if (posDiff !== 0) return posDiff;
+    } else if (hasCustomA !== hasCustomB) {
+      return hasCustomA ? -1 : 1;
+    }
+
+    // 3. De no haberle asignado un orden, por fecha de Creación (createdAt)
+    const createdA = parseCreationTimestamp(a.createdAt);
+    const createdB = parseCreationTimestamp(b.createdAt);
+    if (createdA !== createdB) {
+      return createdA - createdB;
+    }
+
+    const idTimeA = extractIdTimestamp(a.id);
+    const idTimeB = extractIdTimestamp(b.id);
+    if (idTimeA !== idTimeB) {
+      return idTimeA - idTimeB;
+    }
+
+    return (a.ot || '').localeCompare(b.ot || '', 'es', {
+      numeric: true,
+      sensitivity: 'base',
+    });
+  });
+}
+
 /**
  * Generates and downloads a high-contrast, easy-to-read A4 Landscape PDF
  * containing all work orders assigned to a user with:
@@ -71,6 +205,8 @@ export function generateAndDownloadUserJobsPdf({
   jobs,
   getDepartmentName,
 }: GenerateUserAssignedJobsPdfParams): void {
+  const sortedJobs = sortUserJobsForPdf(jobs, getDepartmentName);
+
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -82,7 +218,7 @@ export function generateAndDownloadUserJobsPdf({
   const marginX = 12;
   const contentWidth = pageWidth - marginX * 2; // 273 mm
 
-  const urgentCount = jobs.filter((j) => j.isUrgent).length;
+  const urgentCount = sortedJobs.filter((j) => j.isUrgent).length;
   const nowStr = new Date().toLocaleString('es-ES', {
     day: '2-digit',
     month: '2-digit',
@@ -155,7 +291,7 @@ export function generateAndDownloadUserJobsPdf({
         doc.setTextColor(15, 23, 42);
       }
       doc.text(
-        `Total asignados: ${jobs.length}   |   Urgentes: ${urgentCount}`,
+        `Total asignados: ${sortedJobs.length}   |   Urgentes: ${urgentCount}`,
         pageWidth - marginX - 5,
         29.5,
         { align: 'right' }
@@ -207,7 +343,7 @@ export function generateAndDownloadUserJobsPdf({
   let cursorY = drawPageHeader(true);
   cursorY = drawTableHeader(cursorY);
 
-  if (jobs.length === 0) {
+  if (sortedJobs.length === 0) {
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(203, 213, 225);
     doc.setLineWidth(0.3);
@@ -227,7 +363,7 @@ export function generateAndDownloadUserJobsPdf({
     const minRowHeight = 11.5;
     const bottomLimit = pageHeight - 16;
 
-    jobs.forEach((job, idx) => {
+    sortedJobs.forEach((job, idx) => {
       const otText = (job.ot || '-').trim();
       const clientText = (job.client || '-').trim();
       const deptText = (getDepartmentName(job.departmentId) || 'Sin departamento').trim();

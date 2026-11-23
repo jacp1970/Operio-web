@@ -1296,8 +1296,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
-    const currentCompanyJobs = allWorkOrders.filter((w) => w.companyId === companyId);
-    const initialOrderPosition = data.orderPosition ?? currentCompanyJobs.length;
+    const initialOrderPosition = data.orderPosition;
+    const initialHasCustomOrder = data.orderPosition !== undefined;
 
     // Build the initial people traceability trail starting from creator Administrator or Administrativo
     const parsedCreated = data.createdAt ? new Date(data.createdAt) : new Date();
@@ -1362,7 +1362,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       pdfAttachment: data.pdfAttachment,
       createdAt: creationTime,
       updatedAt: new Date().toISOString(),
-      orderPosition: initialOrderPosition,
+      ...(initialOrderPosition !== undefined ? { orderPosition: initialOrderPosition } : {}),
+      hasCustomOrder: initialHasCustomOrder,
       createdById: currentUser.id,
       createdByName: currentUser.name,
       participantsHistory: initialParticipants,
@@ -1472,6 +1473,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (shouldResetToPending && pendingStatus) {
       finalUpdates.statusId = pendingStatus.id;
+    }
+
+    if (
+      updates.assignedOperatorId !== undefined &&
+      updates.assignedOperatorId !== existing.assignedOperatorId &&
+      updates.orderPosition === undefined
+    ) {
+      finalUpdates.hasCustomOrder = false;
     }
 
     // Build or inherit people traceability history
@@ -1949,29 +1958,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const posMap = new Map<string, number>();
     const changedIds: string[] = [];
 
-    reorderedJobs.forEach((job, idx) => {
-      posMap.set(job.id, idx);
-      if (job.orderPosition !== idx) {
-        changedIds.push(job.id);
-      }
-    });
+    if (scopedJobIds && scopedJobIds.length > 0) {
+      const validScopedSet = new Set(
+        Array.from(new Set(scopedJobIds)).filter((id) => jobById.has(id))
+      );
+      reorderedJobs.forEach((job, idx) => {
+        if (validScopedSet.has(job.id)) {
+          posMap.set(job.id, idx);
+          if (job.orderPosition !== idx || job.hasCustomOrder !== true) {
+            changedIds.push(job.id);
+          }
+        }
+      });
+    } else {
+      reorderedJobs.forEach((job, idx) => {
+        posMap.set(job.id, idx);
+        if (job.orderPosition !== idx || job.hasCustomOrder !== true) {
+          changedIds.push(job.id);
+        }
+      });
+    }
 
     // Update local state immutably
     setAllWorkOrders((prev) =>
       prev.map((w) => {
         if (posMap.has(w.id)) {
           const nextPos = posMap.get(w.id)!;
-          if (w.orderPosition !== nextPos) {
-            return { ...w, orderPosition: nextPos, updatedAt };
+          if (w.orderPosition !== nextPos || w.hasCustomOrder !== true) {
+            return { ...w, orderPosition: nextPos, hasCustomOrder: true, updatedAt };
           }
         }
         return w;
       })
     );
 
-    // Persist every work order whose orderPosition changed so Firestore stays consistent
+    // Persist every work order whose orderPosition or hasCustomOrder changed so Firestore stays consistent
     changedIds.forEach((id) => {
-      fsUpdate('workOrders', id, { orderPosition: posMap.get(id)!, updatedAt });
+      fsUpdate('workOrders', id, {
+        orderPosition: posMap.get(id)!,
+        hasCustomOrder: true,
+        updatedAt,
+      });
     });
 
     return { success: true };
@@ -2059,19 +2086,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const posMap = new Map<string, number>();
     const changedIds: string[] = [];
 
-    reorderedJobs.forEach((job, idx) => {
-      posMap.set(job.id, idx);
-      if (job.orderPosition !== idx) {
-        changedIds.push(job.id);
-      }
-    });
+    if (scopedJobIds && scopedJobIds.length > 0) {
+      const validScopedSet = new Set(
+        Array.from(new Set(scopedJobIds)).filter((id) => jobById.has(id))
+      );
+      reorderedJobs.forEach((job, idx) => {
+        if (validScopedSet.has(job.id)) {
+          posMap.set(job.id, idx);
+          if (job.orderPosition !== idx || job.hasCustomOrder !== true) {
+            changedIds.push(job.id);
+          }
+        }
+      });
+    } else {
+      reorderedJobs.forEach((job, idx) => {
+        posMap.set(job.id, idx);
+        if (job.orderPosition !== idx || job.hasCustomOrder !== true) {
+          changedIds.push(job.id);
+        }
+      });
+    }
 
     setAllWorkOrders((prev) =>
       prev.map((w) => {
         if (posMap.has(w.id)) {
           const nextPos = posMap.get(w.id)!;
-          if (w.orderPosition !== nextPos) {
-            return { ...w, orderPosition: nextPos, updatedAt };
+          if (w.orderPosition !== nextPos || w.hasCustomOrder !== true) {
+            return { ...w, orderPosition: nextPos, hasCustomOrder: true, updatedAt };
           }
         }
         return w;
@@ -2079,7 +2120,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     changedIds.forEach((id) => {
-      fsUpdate('workOrders', id, { orderPosition: posMap.get(id)!, updatedAt });
+      fsUpdate('workOrders', id, {
+        orderPosition: posMap.get(id)!,
+        hasCustomOrder: true,
+        updatedAt,
+      });
     });
 
     return { success: true };
@@ -2102,13 +2147,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     sortedByDate.forEach((job, idx) => {
       posMap.set(job.id, idx);
-      fsUpdate('workOrders', job.id, { orderPosition: idx, updatedAt });
+      fsUpdate('workOrders', job.id, {
+        orderPosition: idx,
+        hasCustomOrder: false,
+        updatedAt,
+      });
     });
 
     setAllWorkOrders((prev) =>
       prev.map((w) => {
         if (posMap.has(w.id)) {
-          return { ...w, orderPosition: posMap.get(w.id)!, updatedAt };
+          return {
+            ...w,
+            orderPosition: posMap.get(w.id)!,
+            hasCustomOrder: false,
+            updatedAt,
+          };
         }
         return w;
       })

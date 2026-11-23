@@ -117,6 +117,7 @@ export interface WorkOrder {
   createdAt: string; // Fecha de creación (automática o extraída de PDF)
   updatedAt: string;
   orderPosition?: number; // Posición bajo criterio de operarios para ordenación personalizada
+  hasCustomOrder?: boolean; // Indica si se ha asignado explícitamente un orden personalizado
   createdById?: string; // ID del administrador que creó la orden
   createdByName?: string; // Nombre del administrador creador
   participantsHistory?: WorkOrderParticipant[]; // Historial de personas por las que ha pasado el trabajo
